@@ -57,6 +57,9 @@ class OllamaProvider(RephraseProvider):
         payload = {
             "model": self._model,
             "stream": True,
+            # Low temperature: rephrasing wants faithful, stable rewrites, not
+            # creative variance (small models echo or drift languages at 0.8).
+            "options": {"temperature": 0.3},
             "messages": [
                 {"role": "system", "content": system_prompt(mode)},
                 {"role": "user", "content": text},

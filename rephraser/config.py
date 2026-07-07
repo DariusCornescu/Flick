@@ -21,7 +21,8 @@ RUN_VALUE_NAME = "Rephraser"
 class Config:
     provider: str = "ollama"  # "ollama" | "anthropic"
     ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"
+    # gemma3 is multilingual (Romanian + English included); llama3.2 is not.
+    ollama_model: str = "gemma3:4b"
     anthropic_model: str = "claude-opus-4-8"
     hotkey: str = DEFAULT_HOTKEY
     mode: str = "formal"
