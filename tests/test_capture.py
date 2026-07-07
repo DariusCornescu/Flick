@@ -43,3 +43,29 @@ def test_paste_puts_text_on_clipboard(qapp, capture, monkeypatch):
     monkeypatch.setattr(capture, "_send_paste", lambda: None)
     capture.paste("new text")
     assert QGuiApplication.clipboard().text() == "new text"
+
+
+def test_wait_for_chord_release_returns_when_released(qapp, capture, monkeypatch):
+    states = iter([True, True, False])
+    monkeypatch.setattr(
+        capture, "_modifiers_physically_down", lambda: next(states, False)
+    )
+    assert capture._wait_for_chord_release(timeout_s=1.0) is True
+
+
+def test_wait_for_chord_release_times_out_when_held(qapp, capture, monkeypatch):
+    monkeypatch.setattr(capture, "_modifiers_physically_down", lambda: True)
+    assert capture._wait_for_chord_release(timeout_s=0.05) is False
+
+
+def test_prepare_falls_back_to_release_only_on_timeout(qapp, capture, monkeypatch):
+    released = []
+    monkeypatch.setattr(capture, "_release_modifiers", lambda: released.append(True))
+
+    monkeypatch.setattr(capture, "_wait_for_chord_release", lambda: True)
+    capture._prepare_for_keystroke()
+    assert released == []
+
+    monkeypatch.setattr(capture, "_wait_for_chord_release", lambda: False)
+    capture._prepare_for_keystroke()
+    assert released == [True]

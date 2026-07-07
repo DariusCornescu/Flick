@@ -60,7 +60,11 @@ class OllamaProvider(RephraseProvider):
             except requests.Timeout as exc:
                 raise ProviderError("Ollama stream timed out.") from exc
             except (requests.RequestException, json.JSONDecodeError) as exc:
-                raise ProviderError(f"Ollama stream failed: {exc}") from exc
+                # requests wraps mid-stream read timeouts in ConnectionError,
+                # so this branch covers both dropped and stalled streams.
+                raise ProviderError(
+                    f"Ollama stream failed (connection lost or timed out): {exc}"
+                ) from exc
 
     @staticmethod
     def _error_detail(response: requests.Response) -> str:

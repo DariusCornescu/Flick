@@ -41,8 +41,25 @@ class Config:
             return cls()
         if not isinstance(data, dict):
             return cls()
+        # Keep only known fields whose JSON value matches the field's type;
+        # a hand-edited config must never crash a provider later on.
+        defaults = cls()
         known = {f.name for f in dataclasses.fields(cls)}
-        return cls(**{k: v for k, v in data.items() if k in known})
+        clean: dict[str, object] = {}
+        for key, value in data.items():
+            if key not in known:
+                continue
+            default = getattr(defaults, key)
+            if isinstance(default, bool):
+                accepted = isinstance(value, bool)
+            elif isinstance(default, float):
+                accepted = isinstance(value, (int, float)) and not isinstance(value, bool)
+                value = float(value) if accepted else value
+            else:
+                accepted = isinstance(value, type(default))
+            if accepted:
+                clean[key] = value
+        return cls(**clean)  # type: ignore[arg-type]
 
     def save(self) -> None:
         path = self.path()
@@ -72,7 +89,16 @@ def _launch_command() -> str:
         return f'"{sys.executable}"'
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     interpreter = pythonw if pythonw.exists() else Path(sys.executable)
-    return f'"{interpreter}" -m rephraser.app'
+    # Run-key commands start in a system directory, where `-m rephraser.app`
+    # is not importable from a source checkout. Bootstrap sys.path explicitly
+    # so startup works without the package being pip-installed.
+    package_root = Path(__file__).resolve().parent.parent
+    bootstrap = (
+        "import sys, runpy; "
+        f"sys.path.insert(0, {str(package_root)!r}); "
+        "runpy.run_module('rephraser.app', run_name='__main__')"
+    )
+    return f'"{interpreter}" -c "{bootstrap}"'
 
 
 def set_run_on_startup(enable: bool) -> None:

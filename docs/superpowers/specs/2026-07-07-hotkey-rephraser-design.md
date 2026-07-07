@@ -65,8 +65,10 @@ rephraser/
 - **Hotkey format:** pynput `GlobalHotKeys` syntax stored in config
   (`"<ctrl>+<alt>+r"`). Settings dialog validates by attempting to parse.
 - **Streaming vs. editing:** the popup's editor is read-only during streaming
-  and becomes editable when the stream ends (or errors). This avoids fighting
-  the user's caret while appending tokens.
+  and becomes editable when the stream finishes. On a stream error the popup
+  closes and a tray notification is shown (partial text is discarded, matching
+  core-flow step 10). Read-only-while-streaming avoids fighting the user's
+  caret while appending tokens.
 - **Worker threading:** the LLM call runs in a `QThread` worker emitting
   `chunk`/`finished`/`failed` signals. All UI and clipboard work stays on the
   main thread.

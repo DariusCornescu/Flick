@@ -1,6 +1,7 @@
 """Entry point - wires hotkey, capture, providers, popup, tray together."""
 from __future__ import annotations
 
+import os
 import sys
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
@@ -19,6 +20,7 @@ from rephraser.ui.tray import TrayIcon
 
 FOCUS_RETURN_DELAY_MS = 150
 CLIPBOARD_RESTORE_DELAY_MS = 500
+QUIT_WORKER_WAIT_MS = 2000
 
 
 class RephraseWorker(QThread):
@@ -61,6 +63,11 @@ class RephraserApp(QObject):
         self._busy = False
         self._backup = ""
         self._worker: RephraseWorker | None = None
+        # Workers we told to stop but whose threads may still be running.
+        # Holding a reference keeps the QThread wrapper alive until `finished`
+        # is delivered; letting it be garbage-collected while the thread runs
+        # aborts the process (QThread destroyed while running).
+        self._retired_workers: set[RephraseWorker] = set()
 
         self._capture = ClipboardCapture()
         self._popup = ResultPopup()
@@ -97,10 +104,20 @@ class RephraserApp(QObject):
         self._listener.stop()
         worker = self._worker
         self._stop_worker()
-        if worker is not None and worker.isRunning():
-            worker.wait(2000)
+        if self._busy:
+            # Session in flight: honor the restore guarantee before exiting.
+            try:
+                self._capture.restore(self._backup)
+            except Exception:  # noqa: BLE001
+                pass
         self._tray.hide()
         self._app.quit()
+        if worker is not None and worker.isRunning() and not worker.wait(
+            QUIT_WORKER_WAIT_MS
+        ):
+            # Worker is stuck in a blocking network read; interpreter teardown
+            # with a live QThread would abort. Nothing left to save - exit hard.
+            os._exit(0)
 
     def _start_listener(self) -> None:
         try:
@@ -118,6 +135,10 @@ class RephraserApp(QObject):
         """Main-thread slot (queued from the listener thread)."""
         if self._busy or not self._config.enabled:
             return
+        if QApplication.activeModalWidget() is not None:
+            # A modal dialog (e.g. Settings) would block the popup's input,
+            # wedging the session with no way to accept or cancel.
+            return
         self._busy = True
 
         try:
@@ -126,20 +147,36 @@ class RephraserApp(QObject):
             self._tray.notify(str(exc))
             self._busy = False
             return
-
-        self._backup = self._capture.backup_text()
-        text = self._capture.capture_selection()
-        if not text or not text.strip():
-            self._tray.notify("No text selected (or the app blocked the copy).")
-            self._finish_session(restore=True)
+        except Exception as exc:  # noqa: BLE001 - never wedge the busy flag
+            self._tray.notify(f"Rephraser error: {exc}")
+            self._busy = False
             return
 
-        self._popup.begin(self._config.mode)
-        self._worker = RephraseWorker(provider, text, self._config.mode)
-        self._worker.chunk.connect(self._on_chunk)
-        self._worker.finished_ok.connect(self._on_stream_done)
-        self._worker.failed.connect(self._on_failed)
-        self._worker.start()
+        have_backup = False
+        try:
+            self._backup = self._capture.backup_text()
+            have_backup = True
+            text = self._capture.capture_selection()
+            if not text or not text.strip():
+                self._tray.notify("No text selected (or the app blocked the copy).")
+                # The simulated Ctrl+C may still land in a slow target app;
+                # delay the restore so a late copy can't clobber it afterwards.
+                QTimer.singleShot(
+                    CLIPBOARD_RESTORE_DELAY_MS,
+                    lambda: self._finish_session(restore=True),
+                )
+                return
+
+            self._popup.begin(self._config.mode)
+            self._worker = RephraseWorker(provider, text, self._config.mode)
+            self._worker.chunk.connect(self._on_chunk)
+            self._worker.finished_ok.connect(self._on_stream_done)
+            self._worker.failed.connect(self._on_failed)
+            self._worker.start()
+        except Exception as exc:  # noqa: BLE001 - never wedge the busy flag
+            self._tray.notify(f"Rephraser error: {exc}")
+            self._popup.dismiss()
+            self._finish_session(restore=have_backup)
 
     def _make_provider(self) -> RephraseProvider:
         if self._config.provider == "anthropic":
@@ -179,7 +216,10 @@ class RephraserApp(QObject):
         QTimer.singleShot(FOCUS_RETURN_DELAY_MS, lambda: self._paste_and_restore(text))
 
     def _paste_and_restore(self, text: str) -> None:
-        self._capture.paste(text)
+        try:
+            self._capture.paste(text)
+        except Exception as exc:  # noqa: BLE001 - still restore + release busy
+            self._tray.notify(f"Paste failed: {exc}")
         QTimer.singleShot(
             CLIPBOARD_RESTORE_DELAY_MS, lambda: self._finish_session(restore=True)
         )
@@ -197,14 +237,22 @@ class RephraserApp(QObject):
             return
         if worker.isRunning():
             worker.requestInterruption()
-            worker.finished.connect(worker.deleteLater)
+            self._retired_workers.add(worker)
+            worker.finished.connect(lambda w=worker: self._reap_worker(w))
         else:
             worker.deleteLater()
+
+    def _reap_worker(self, worker: RephraseWorker) -> None:
+        self._retired_workers.discard(worker)
+        worker.deleteLater()
 
     def _finish_session(self, restore: bool) -> None:
         self._stop_worker()
         if restore:
-            self._capture.restore(self._backup)
+            try:
+                self._capture.restore(self._backup)
+            except Exception:  # noqa: BLE001 - busy flag must always reset
+                pass
         self._backup = ""
         self._busy = False
 

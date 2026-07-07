@@ -121,3 +121,11 @@ Hotkey/paste round-trips need a real desktop session, so verify by hand:
   process (Windows UIPI) — run Rephraser elevated if you need it there.
 - Apps with non-standard copy shortcuts (some terminals use
   `Ctrl+Shift+C`) won't respond to the simulated `Ctrl+C`.
+- The hotkey chord is observed, **not swallowed** (pynput cannot suppress a
+  single combination), so it still reaches the focused app. Windows treats
+  `Ctrl+Alt` as `AltGr`: on layouts where `AltGr+R` produces a character
+  (e.g. `®` on US-International), the default hotkey types that character
+  over your selection. If your layout does this, pick a different hotkey in
+  Settings (e.g. `<ctrl>+<shift>+<f9>`).
+- The "Start with Windows" entry embeds the path of this checkout. If you
+  move the folder, re-toggle the checkbox in Settings.
