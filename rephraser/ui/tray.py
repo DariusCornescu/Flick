@@ -37,6 +37,7 @@ def _make_icon() -> QIcon:
 class TrayIcon(QSystemTrayIcon):
     enabled_toggled = Signal(bool)
     mode_selected = Signal(str)
+    compose_requested = Signal()
     settings_requested = Signal()
     quit_requested = Signal()
 
@@ -60,6 +61,10 @@ class TrayIcon(QSystemTrayIcon):
             action.triggered.connect(lambda _=False, n=name: self.mode_selected.emit(n))
             self._mode_group.addAction(action)
             mode_menu.addAction(action)
+
+        compose_action = QAction("Compose...", menu)
+        compose_action.triggered.connect(self.compose_requested)
+        menu.addAction(compose_action)
 
         menu.addSeparator()
         settings_action = QAction("Settings...", menu)
