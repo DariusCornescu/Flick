@@ -53,9 +53,53 @@ MODES: dict[str, str] = {
 }
 
 
+# Parametrized mode: "translate:<Language>" translates instead of rewriting.
+# It deliberately bypasses _OUTPUT_ONLY, whose same-language/never-translate
+# rules exist for every other mode.
+TRANSLATE_PREFIX = "translate:"
+TRANSLATE_LANGUAGES = (
+    "English",
+    "Romanian",
+    "German",
+    "French",
+    "Spanish",
+    "Italian",
+)
+
+
+def _translate_prompt(target: str) -> str:
+    return (
+        f"You translate text into {target}. Preserve the meaning, tone, and"
+        " formatting of the original; translate naturally rather than"
+        " word-for-word. Respond with ONLY the translated text - no preamble,"
+        " no explanations, no quotation marks around the result, no markdown"
+        f" fences - written in correct {target} with that language's proper"
+        " spelling and diacritics. If the text is already entirely in"
+        f" {target}, return it unchanged. Your entire response is inserted"
+        " directly into the user's document in place of the original text."
+    )
+
+
 def system_prompt(mode: str) -> str:
-    """Return the system prompt for *mode*; raises KeyError for unknown modes."""
+    """Return the system prompt for *mode*; raises KeyError for unknown modes.
+
+    Plain modes are keys of :data:`MODES`; translation is the parametrized
+    mode ``translate:<Language>`` (any non-empty target is accepted, the tray
+    offers :data:`TRANSLATE_LANGUAGES`).
+    """
+    if mode.startswith(TRANSLATE_PREFIX):
+        target = mode[len(TRANSLATE_PREFIX):].strip()
+        if not target:
+            raise KeyError(mode)
+        return _translate_prompt(target)
     return MODES[mode]
+
+
+def mode_label(mode: str) -> str:
+    """Human-facing label for a mode key ('translate:German' -> 'translate → German')."""
+    if mode.startswith(TRANSLATE_PREFIX):
+        return f"translate → {mode[len(TRANSLATE_PREFIX):]}"
+    return mode
 
 
 class ProviderError(RuntimeError):

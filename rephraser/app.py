@@ -12,7 +12,7 @@ from rephraser.config import Config
 from rephraser.core.capture import ClipboardCapture
 from rephraser.core.hotkeys import HotkeyListener
 from rephraser.core.llm.anthropic import AnthropicProvider
-from rephraser.core.llm.base import ProviderError, RephraseProvider
+from rephraser.core.llm.base import ProviderError, RephraseProvider, mode_label
 from rephraser.core.llm.ollama import OllamaProvider
 from rephraser.ui.popup import ResultPopup
 from rephraser.ui.settings import SettingsDialog
@@ -184,7 +184,7 @@ class RephraserApp(QObject):
                 )
                 return
 
-            self._popup.begin(self._config.mode)
+            self._popup.begin(mode_label(self._config.mode))
             self._worker = RephraseWorker(provider, text, self._config.mode)
             self._worker.chunk.connect(self._on_chunk)
             self._worker.finished_ok.connect(self._on_stream_done)
@@ -202,7 +202,7 @@ class RephraserApp(QObject):
             return
         self._busy = True
         self._manual_session = True
-        self._popup.begin_compose(self._config.mode)
+        self._popup.begin_compose(mode_label(self._config.mode))
 
     def _on_compose_submitted(self, text: str) -> None:
         """Compose text submitted; the popup already shows its streaming state."""
