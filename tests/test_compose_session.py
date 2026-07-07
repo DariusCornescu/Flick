@@ -89,6 +89,13 @@ def test_open_compose_begins_manual_session(qapp):
     assert app._popup.compose_begun == ["formal"]
 
 
+def test_open_compose_shows_pretty_translate_label(qapp):
+    app = _StubApp()
+    app._config.mode = "translate:German"
+    app._open_compose()
+    assert app._popup.compose_begun == ["translate → German"]
+
+
 def test_open_compose_ignored_while_busy(qapp):
     app = _StubApp()
     app._busy = True

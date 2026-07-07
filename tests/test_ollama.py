@@ -140,6 +140,20 @@ def test_stream_error_line_raises(monkeypatch):
         list(provider.rephrase("hi", "formal"))
 
 
+def test_translate_mode_reaches_provider_payload(monkeypatch):
+    lines = [json.dumps({"message": {"content": "Hallo"}, "done": True})]
+    captured = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        captured["payload"] = json
+        return FakeResponse(lines)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = OllamaProvider("http://localhost:11434", "gemma3:4b")
+    assert "".join(provider.rephrase("salut", "translate:German")) == "Hallo"
+    assert "German" in captured["payload"]["messages"][0]["content"]
+
+
 # -- cancel() ----------------------------------------------------------------
 
 def test_cancel_shuts_down_streaming_socket(monkeypatch):

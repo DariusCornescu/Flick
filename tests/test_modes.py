@@ -1,7 +1,12 @@
 """Tests for the rephrase modes and provider base."""
 import pytest
 
-from rephraser.core.llm.base import MODES, system_prompt
+from rephraser.core.llm.base import (
+    MODES,
+    TRANSLATE_LANGUAGES,
+    mode_label,
+    system_prompt,
+)
 
 
 def test_all_modes_present():
@@ -42,3 +47,36 @@ def test_prompt_mode_demands_imperative_commands():
 def test_unknown_mode_raises():
     with pytest.raises(KeyError):
         system_prompt("pirate")
+
+
+# -- translate:<language> ------------------------------------------------------
+
+def test_translate_mode_builds_target_language_prompt():
+    prompt = system_prompt("translate:German")
+    assert "German" in prompt
+    assert "ONLY the translated text" in prompt
+    # The shared same-language rule must not leak into the one mode
+    # whose whole point is changing the language.
+    assert "Never translate" not in prompt
+
+
+def test_translate_prompt_tolerates_already_translated_text():
+    prompt = system_prompt("translate:English")
+    assert "already entirely in English" in prompt
+
+
+def test_translate_mode_requires_a_target():
+    with pytest.raises(KeyError):
+        system_prompt("translate:")
+
+
+def test_translate_targets_are_curated():
+    assert "English" in TRANSLATE_LANGUAGES
+    assert "Romanian" in TRANSLATE_LANGUAGES
+    for language in TRANSLATE_LANGUAGES:
+        assert language in system_prompt(f"translate:{language}")
+
+
+def test_mode_label_prettifies_translate():
+    assert mode_label("translate:French") == "translate → French"
+    assert mode_label("formal") == "formal"

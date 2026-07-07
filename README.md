@@ -75,6 +75,9 @@ Right-click the tray icon:
   - `casual` — relax the tone
   - `prompt` — turn a rough note ("you forgot to do X") into a clear,
     actionable prompt for an AI assistant
+  - `Translate →` — translate the selection into a chosen language
+    (English, Romanian, German, French, Spanish, Italian) instead of
+    rewriting it
 - **Compose…** — open the window without selecting anything: type or paste
   text, `Ctrl+Enter` rephrases it with the active mode, `Enter` copies the
   result to the clipboard. Unlike hotkey sessions, the compose window stays
