@@ -6,7 +6,7 @@ import shiboken6
 from PySide6.QtCore import QObject, Qt
 
 from rephraser.app import RephraserApp, RephraseWorker
-from rephraser.core.llm.base import RephraseProvider
+from rephraser.core.llm.base import ProviderError, RephraseProvider
 
 
 class BlockingProvider(RephraseProvider):
@@ -88,6 +88,47 @@ def test_worker_cancel_aborts_blocked_provider(start_worker):
     assert worker.wait(5000)  # exits promptly, not after a read timeout
     assert provider.cancel_calls == 1
     assert outcomes == []  # a cancelled worker reports no outcome
+
+
+def test_cancelled_worker_suppresses_late_failure(start_worker):
+    # A cancel-unaware provider (base no-op cancel) stays blocked after Esc
+    # and eventually fails like a read timeout; the cancelled worker must
+    # still report no outcome.
+    class RaisingOnAbortProvider(RephraseProvider):
+        name = "raising"
+
+        def __init__(self):
+            self.streaming = threading.Event()
+            self.release = threading.Event()
+
+        def rephrase(self, text, mode):
+            yield "first "
+            self.streaming.set()
+            if not self.release.wait(timeout=5.0):
+                raise AssertionError("test never released the blocked read")
+            raise ProviderError("stream timed out")
+
+        def cancel(self):
+            self.release.set()  # only so the fixture can always unblock it
+
+    provider = RaisingOnAbortProvider()
+    worker = start_worker(provider)
+    outcomes = []
+    worker.finished_ok.connect(
+        lambda text: outcomes.append(("ok", text)),
+        Qt.ConnectionType.DirectConnection,
+    )
+    worker.failed.connect(
+        lambda msg: outcomes.append(("failed", msg)),
+        Qt.ConnectionType.DirectConnection,
+    )
+    assert provider.streaming.wait(timeout=5.0)
+
+    worker.requestInterruption()  # cancel without a transport abort
+    provider.release.set()  # ...then the blocked read fails on its own
+
+    assert worker.wait(5000)
+    assert outcomes == []  # the late ProviderError must not surface
 
 
 def test_stop_worker_cancels_running_worker(start_worker):

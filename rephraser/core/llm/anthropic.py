@@ -33,7 +33,9 @@ class AnthropicProvider(RephraseProvider):
     def cancel(self) -> None:
         # MessageStream.close() closes the underlying HTTP response, making a
         # blocked read in the worker thread fail immediately instead of
-        # waiting out the read timeout.
+        # waiting out the read timeout. (Relies on httpx's close aborting a
+        # cross-thread recv - true on Windows; on POSIX a socket-shutdown
+        # approach like OllamaProvider's would be the portable idiom.)
         with self._cancel_lock:
             self._cancelled = True
             stream = self._stream

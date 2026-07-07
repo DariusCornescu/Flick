@@ -184,3 +184,12 @@ def test_cancel_before_stream_opens_discards_stream():
 
 def test_cancel_without_request_is_noop():
     AnthropicProvider(api_key="sk-test").cancel()
+
+
+def test_cancel_twice_and_after_completion_is_safe():
+    fake = FakeClient(chunks=["Done."])
+    provider = _provider(fake)
+    assert "".join(provider.rephrase("hi", "formal")) == "Done."
+
+    provider.cancel()  # after completion: stream already deregistered
+    provider.cancel()  # and cancel stays idempotent

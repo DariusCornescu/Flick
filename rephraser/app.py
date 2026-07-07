@@ -51,10 +51,12 @@ class RephraseWorker(QThread):
                 parts.append(piece)
                 self.chunk.emit(piece)
         except ProviderError as exc:
-            self.failed.emit(str(exc))
+            if not self.isInterruptionRequested():
+                self.failed.emit(str(exc))
             return
         except Exception as exc:  # noqa: BLE001 - last resort: never crash the app
-            self.failed.emit(f"Unexpected error: {exc}")
+            if not self.isInterruptionRequested():
+                self.failed.emit(f"Unexpected error: {exc}")
             return
         if self.isInterruptionRequested():
             return  # cancelled: the session is torn down, report no outcome

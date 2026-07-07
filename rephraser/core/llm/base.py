@@ -57,6 +57,9 @@ class RephraseProvider(ABC):
         (the UI thread, while a worker is blocked in a network read).
         Implementations close their underlying transport so the blocked read
         fails immediately instead of waiting out the read timeout; the
-        aborted ``rephrase`` then ends quietly rather than raising. Cancel is
-        sticky: create a new provider for the next request. Default is a
-        no-op, meaning the worker can only stop between chunks."""
+        aborted ``rephrase`` then ends quietly rather than raising. A cancel
+        that lands while the request is still connecting (no transport to
+        close yet) takes effect as soon as the transport materializes.
+        Cancel is sticky: create a new provider for the next request.
+        Default is a no-op, meaning the worker can only stop between
+        chunks."""

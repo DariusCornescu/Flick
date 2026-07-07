@@ -208,3 +208,30 @@ def test_cancel_before_response_arrives_discards_response(monkeypatch):
 
 def test_cancel_without_request_is_noop():
     OllamaProvider("http://localhost:11434", "llama3.2").cancel()
+
+
+def test_cancel_twice_and_after_completion_is_safe(monkeypatch):
+    lines = [json.dumps({"message": {"content": "Hi"}, "done": True})]
+    response = FakeResponse(lines)
+    monkeypatch.setattr(requests, "post", lambda *a, **k: response)
+    provider = OllamaProvider("http://localhost:11434", "llama3.2")
+    assert "".join(provider.rephrase("hi", "formal")) == "Hi"
+
+    provider.cancel()  # after completion: transport already released
+    provider.cancel()  # and cancel stays idempotent
+
+
+def test_urllib3_still_exposes_socket_abort_path():
+    """Canary: cancel() aborts a blocked read via the undocumented
+    response.raw.connection.sock path. If a urllib3 upgrade renames it,
+    cancel() silently degrades to close() - which cannot abort a recv()
+    already blocked in another thread - so fail loudly here instead."""
+    import inspect
+
+    import urllib3
+
+    assert isinstance(
+        inspect.getattr_static(urllib3.response.HTTPResponse, "connection", None),
+        property,
+    )
+    assert hasattr(urllib3.connection.HTTPConnection("localhost"), "sock")
