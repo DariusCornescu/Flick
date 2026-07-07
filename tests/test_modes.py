@@ -14,6 +14,13 @@ def test_prompts_demand_output_only():
         assert "ONLY the rewritten text" in prompt
 
 
+def test_prompts_preserve_input_language():
+    for mode in MODES:
+        prompt = system_prompt(mode)
+        assert "same language" in prompt
+        assert "Never translate" in prompt
+
+
 def test_unknown_mode_raises():
     with pytest.raises(KeyError):
         system_prompt("pirate")
