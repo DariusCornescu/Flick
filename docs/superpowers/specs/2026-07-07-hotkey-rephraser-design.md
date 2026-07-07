@@ -56,9 +56,12 @@ rephraser/
 
 ## Key decisions (points the spec left open)
 
-- **HTTP client:** `requests` with `stream=True` for both providers. The
-  Anthropic provider speaks the Messages API SSE stream directly — no SDK
-  dependency, symmetrical with Ollama.
+- **HTTP clients:** `requests` with `stream=True` for Ollama (NDJSON lines
+  from `POST /api/chat`). The Anthropic provider uses the official `anthropic`
+  SDK (`client.messages.stream(...)` → `text_stream`) — the SDK is the
+  canonical integration path for Python; default model `claude-opus-4-8`.
+  No sampling parameters (removed on current models); thinking left off for
+  low latency.
 - **Hotkey format:** pynput `GlobalHotKeys` syntax stored in config
   (`"<ctrl>+<alt>+r"`). Settings dialog validates by attempting to parse.
 - **Streaming vs. editing:** the popup's editor is read-only during streaming
