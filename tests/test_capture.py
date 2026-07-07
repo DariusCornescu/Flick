@@ -39,6 +39,14 @@ def test_capture_times_out_when_nothing_copied(qapp, capture, monkeypatch):
     assert capture.capture_selection(timeout_ms=120) is None
 
 
+def test_copy_sets_clipboard_without_pasting(qapp, capture, monkeypatch):
+    sent = []
+    monkeypatch.setattr(capture, "_send_paste", lambda: sent.append(1))
+    capture.copy("copied result")
+    assert QGuiApplication.clipboard().text() == "copied result"
+    assert sent == []  # copy() must never simulate Ctrl+V
+
+
 def test_paste_puts_text_on_clipboard(qapp, capture, monkeypatch):
     monkeypatch.setattr(capture, "_send_paste", lambda: None)
     capture.paste("new text")

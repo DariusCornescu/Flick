@@ -79,6 +79,10 @@ class ClipboardCapture:
             time.sleep(POLL_INTERVAL_S)
         return None
 
+    def copy(self, text: str) -> None:
+        """Put *text* on the clipboard without simulating any keystroke."""
+        QGuiApplication.clipboard().setText(text)
+
     def paste(self, text: str) -> None:
         QGuiApplication.clipboard().setText(text)
         self._send_paste()

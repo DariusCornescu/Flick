@@ -18,6 +18,7 @@ the Anthropic API.
 4. A frameless popup near the cursor shows the result as it is generated.
    When the stream finishes you can edit it. `Enter` inserts,
    `Shift+Enter` adds a newline, `Esc` cancels (clicking elsewhere cancels too).
+   Drag the popup by its title to move it out of the way.
 5. On confirm the result is placed on the clipboard, `Ctrl+V` is simulated,
    and ~0.5 s later your original clipboard is restored.
 
@@ -74,6 +75,10 @@ Right-click the tray icon:
   - `casual` — relax the tone
   - `prompt` — turn a rough note ("you forgot to do X") into a clear,
     actionable prompt for an AI assistant
+- **Compose…** — open the window without selecting anything: type or paste
+  text, `Ctrl+Enter` rephrases it with the active mode, `Enter` copies the
+  result to the clipboard. Unlike hotkey sessions, the compose window stays
+  open when you click elsewhere; close it with `Esc`.
 - **Settings…** — provider, models, API key, hotkey, run on startup.
 - **Quit**
 

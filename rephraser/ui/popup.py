@@ -27,6 +27,7 @@ QPlainTextEdit {
 class ResultPopup(QWidget):
     accepted = Signal(str)
     cancelled = Signal()
+    compose_submitted = Signal(str)
 
     def __init__(self) -> None:
         super().__init__(
@@ -42,6 +43,7 @@ class ResultPopup(QWidget):
 
         self._title = QLabel("Rephrase")
         self._title.setObjectName("title")
+        self._title.setCursor(Qt.CursorShape.SizeAllCursor)  # drag handle hint
         self._status = QLabel("")
         self._editor = QPlainTextEdit()
         self._editor.installEventFilter(self)
@@ -55,15 +57,33 @@ class ResultPopup(QWidget):
 
         self._closing_silently = False
         self._done = False
+        self._composing = False
+        self._drag_offset: QPoint | None = None
 
     # -- session lifecycle ---------------------------------------------------
     def begin(self, mode: str) -> None:
         self._done = False
         self._closing_silently = False
+        self._composing = False
         self._title.setText(f"Rephrase - {mode}")
         self._status.setText("Generating... (Esc to cancel)")
         self._editor.setPlainText("")
         self._editor.setReadOnly(True)
+        self._move_near_cursor()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._editor.setFocus()
+
+    def begin_compose(self, mode: str) -> None:
+        """Open empty and editable: type or paste text, Ctrl+Enter submits."""
+        self._done = False
+        self._closing_silently = False
+        self._composing = True
+        self._title.setText(f"Rephrase - {mode} (compose)")
+        self._status.setText("Ctrl+Enter: rephrase / Esc: close")
+        self._editor.setPlainText("")
+        self._editor.setReadOnly(False)
         self._move_near_cursor()
         self.show()
         self.raise_()
@@ -79,7 +99,11 @@ class ResultPopup(QWidget):
     def finish_stream(self) -> None:
         self._done = True
         self._editor.setReadOnly(False)
-        self._status.setText("Enter: insert / Shift+Enter: newline / Esc: cancel")
+        if self._composing:
+            # A compose session has no target selection: Enter copies instead.
+            self._status.setText("Enter: copy / Shift+Enter: newline / Esc: close")
+        else:
+            self._status.setText("Enter: insert / Shift+Enter: newline / Esc: cancel")
         self._editor.setFocus()
 
     def dismiss(self) -> None:
@@ -104,6 +128,12 @@ class ResultPopup(QWidget):
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                     return False  # let the editor insert a newline
+                if self._composing and not self._done and not self._editor.isReadOnly():
+                    # Compose typing phase: Ctrl+Enter submits, Enter is a newline.
+                    if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                        self._submit_compose()
+                        return True
+                    return False
                 if self._done:
                     self._accept()
                 return True
@@ -111,6 +141,32 @@ class ResultPopup(QWidget):
                 self._cancel()
                 return True
         return super().eventFilter(obj, event)
+
+    def _submit_compose(self) -> None:
+        text = self._editor.toPlainText().strip()
+        if not text:
+            return
+        self._editor.setPlainText("")  # the streamed result replaces the input
+        self._editor.setReadOnly(True)
+        self._status.setText("Generating... (Esc to cancel)")
+        self.compose_submitted.emit(text)
+
+    # -- dragging ------------------------------------------------------------
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = (
+                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            )
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        self._drag_offset = None
+        super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:
@@ -123,8 +179,11 @@ class ResultPopup(QWidget):
             event.type() == QEvent.Type.WindowDeactivate
             and self.isVisible()
             and not self._closing_silently
+            and not self._composing
         ):
             # Transient popup: clicking elsewhere abandons the rephrase.
+            # Compose sessions are user-opened windows; only Esc closes them,
+            # so clicking away to copy something does not lose typed text.
             self._cancel()
         return super().event(event)
 

@@ -74,6 +74,9 @@ class RephraserApp(QObject):
         self._config = Config.load()
         self._busy = False
         self._backup = ""
+        # True for tray-opened compose sessions: text is typed, not selected,
+        # so the result is copied to the clipboard instead of pasted.
+        self._manual_session = False
         self._worker: RephraseWorker | None = None
         # Workers we told to stop but whose threads may still be running.
         # Holding a reference keeps the QThread wrapper alive until `finished`
@@ -85,10 +88,12 @@ class RephraserApp(QObject):
         self._popup = ResultPopup()
         self._popup.accepted.connect(self._on_accepted)
         self._popup.cancelled.connect(self._on_cancelled)
+        self._popup.compose_submitted.connect(self._on_compose_submitted)
 
         self._tray = TrayIcon(self._config.enabled, self._config.mode)
         self._tray.enabled_toggled.connect(self._on_enabled_toggled)
         self._tray.mode_selected.connect(self._on_mode_selected)
+        self._tray.compose_requested.connect(self._open_compose)
         self._tray.settings_requested.connect(self._open_settings)
         self._tray.quit_requested.connect(self._quit)
         self._tray.show()
@@ -190,6 +195,35 @@ class RephraserApp(QObject):
             self._popup.dismiss()
             self._finish_session(restore=have_backup)
 
+    # -- compose session ------------------------------------------------------
+    def _open_compose(self) -> None:
+        """Tray-menu entry: open the popup empty so text can be typed/pasted."""
+        if self._busy or QApplication.activeModalWidget() is not None:
+            return
+        self._busy = True
+        self._manual_session = True
+        self._popup.begin_compose(self._config.mode)
+
+    def _on_compose_submitted(self, text: str) -> None:
+        """Compose text submitted; the popup already shows its streaming state."""
+        try:
+            provider = self._make_provider()
+        except ProviderError as exc:
+            self._tray.notify(str(exc))
+            self._popup.dismiss()
+            self._finish_session(restore=False)
+            return
+        except Exception as exc:  # noqa: BLE001 - never wedge the busy flag
+            self._tray.notify(f"Rephraser error: {exc}")
+            self._popup.dismiss()
+            self._finish_session(restore=False)
+            return
+        self._worker = RephraseWorker(provider, text, self._config.mode)
+        self._worker.chunk.connect(self._on_chunk)
+        self._worker.finished_ok.connect(self._on_stream_done)
+        self._worker.failed.connect(self._on_failed)
+        self._worker.start()
+
     def _make_provider(self) -> RephraseProvider:
         if self._config.provider == "anthropic":
             key = config_mod.get_api_key("anthropic")
@@ -224,6 +258,14 @@ class RephraserApp(QObject):
 
     # -- popup outcomes --------------------------------------------------------
     def _on_accepted(self, text: str) -> None:
+        if self._manual_session:
+            # No target selection to replace: the result goes to the clipboard.
+            try:
+                self._capture.copy(text)
+            except Exception as exc:  # noqa: BLE001 - still release the session
+                self._tray.notify(f"Copy failed: {exc}")
+            self._finish_session(restore=False)
+            return
         # Popup is hidden; give focus time to return to the target window.
         QTimer.singleShot(FOCUS_RETURN_DELAY_MS, lambda: self._paste_and_restore(text))
 
@@ -260,13 +302,16 @@ class RephraserApp(QObject):
 
     def _finish_session(self, restore: bool) -> None:
         self._stop_worker()
-        if restore:
+        # Manual sessions never took a clipboard backup; restoring would wipe
+        # the clipboard (or the just-copied result) with an empty string.
+        if restore and not self._manual_session:
             try:
                 self._capture.restore(self._backup)
             except Exception:  # noqa: BLE001 - busy flag must always reset
                 pass
         self._backup = ""
         self._busy = False
+        self._manual_session = False
 
 
 def main() -> int:
