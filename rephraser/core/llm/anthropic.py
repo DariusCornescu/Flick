@@ -1,7 +1,9 @@
 """Anthropic provider - streams a rewrite via the Messages API (official SDK)."""
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
+from typing import Any
 
 import anthropic
 
@@ -24,8 +26,32 @@ class AnthropicProvider(RephraseProvider):
         self._client = anthropic.Anthropic(
             api_key=api_key, timeout=timeout, max_retries=1
         )
+        self._cancel_lock = threading.Lock()
+        self._cancelled = False
+        self._stream: Any = None  # anthropic MessageStream while one is live
+
+    def cancel(self) -> None:
+        # MessageStream.close() closes the underlying HTTP response, making a
+        # blocked read in the worker thread fail immediately instead of
+        # waiting out the read timeout.
+        with self._cancel_lock:
+            self._cancelled = True
+            stream = self._stream
+        if stream is not None:
+            try:
+                stream.close()
+            except Exception:  # noqa: BLE001 - best-effort abort
+                pass
 
     def rephrase(self, text: str, mode: str) -> Iterator[str]:
+        try:
+            yield from self._stream_text(text, mode)
+        except Exception:  # noqa: BLE001 - cross-thread close raises varied types
+            if self._cancelled:
+                return  # aborted by cancel(); the outcome no longer matters
+            raise
+
+    def _stream_text(self, text: str, mode: str) -> Iterator[str]:
         try:
             with self._client.messages.stream(
                 model=self._model,
@@ -33,7 +59,19 @@ class AnthropicProvider(RephraseProvider):
                 system=system_prompt(mode),
                 messages=[{"role": "user", "content": text}],
             ) as stream:
-                yield from stream.text_stream
+                with self._cancel_lock:
+                    registered = not self._cancelled
+                    if registered:
+                        self._stream = stream
+                if not registered:
+                    # cancel() won the race while the request was opening;
+                    # the context manager closes the never-read stream.
+                    return
+                try:
+                    yield from stream.text_stream
+                finally:
+                    with self._cancel_lock:
+                        self._stream = None
         except anthropic.AuthenticationError as exc:
             raise ProviderError(
                 "Anthropic rejected the API key - update it in Settings."
