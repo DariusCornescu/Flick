@@ -34,6 +34,14 @@ class RephraseWorker(QThread):
         self._text = text
         self._mode = mode
 
+    def cancel(self) -> None:
+        """Main-thread: stop the loop and abort any blocked provider read."""
+        self.requestInterruption()
+        try:
+            self._provider.cancel()
+        except Exception:  # noqa: BLE001 - cancellation must never crash the UI
+            pass
+
     def run(self) -> None:  # worker thread - signals only, no UI
         parts: list[str] = []
         try:
@@ -43,11 +51,15 @@ class RephraseWorker(QThread):
                 parts.append(piece)
                 self.chunk.emit(piece)
         except ProviderError as exc:
-            self.failed.emit(str(exc))
+            if not self.isInterruptionRequested():
+                self.failed.emit(str(exc))
             return
         except Exception as exc:  # noqa: BLE001 - last resort: never crash the app
-            self.failed.emit(f"Unexpected error: {exc}")
+            if not self.isInterruptionRequested():
+                self.failed.emit(f"Unexpected error: {exc}")
             return
+        if self.isInterruptionRequested():
+            return  # cancelled: the session is torn down, report no outcome
         result = "".join(parts).strip()
         if result:
             self.finished_ok.emit(result)
@@ -236,7 +248,7 @@ class RephraserApp(QObject):
         if worker is None:
             return
         if worker.isRunning():
-            worker.requestInterruption()
+            worker.cancel()
             self._retired_workers.add(worker)
             worker.finished.connect(lambda w=worker: self._reap_worker(w))
         else:

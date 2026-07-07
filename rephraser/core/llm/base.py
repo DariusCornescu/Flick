@@ -49,3 +49,17 @@ class RephraseProvider(ABC):
     @abstractmethod
     def rephrase(self, text: str, mode: str) -> Iterator[str]:
         """Yield chunks of the rewritten text. Raises ProviderError on failure."""
+
+    def cancel(self) -> None:
+        """Abort an in-flight :meth:`rephrase` promptly. Thread-safe.
+
+        Called from a different thread than the one consuming ``rephrase``
+        (the UI thread, while a worker is blocked in a network read).
+        Implementations close their underlying transport so the blocked read
+        fails immediately instead of waiting out the read timeout; the
+        aborted ``rephrase`` then ends quietly rather than raising. A cancel
+        that lands while the request is still connecting (no transport to
+        close yet) takes effect as soon as the transport materializes.
+        Cancel is sticky: create a new provider for the next request.
+        Default is a no-op, meaning the worker can only stop between
+        chunks."""
