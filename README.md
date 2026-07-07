@@ -72,6 +72,8 @@ Right-click the tray icon:
   - `concise` — compress while preserving meaning
   - `grammar` — fix grammar/spelling only, keep the style
   - `casual` — relax the tone
+  - `prompt` — turn a rough note ("you forgot to do X") into a clear,
+    actionable prompt for an AI assistant
 - **Settings…** — provider, models, API key, hotkey, run on startup.
 - **Quit**
 
