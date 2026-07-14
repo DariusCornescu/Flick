@@ -78,9 +78,13 @@ Right-click the tray icon:
   - `casual` — relax the tone
   - `prompt` — turn a rough note ("you forgot to do X") into a clear,
     actionable prompt for an AI assistant
+  - `Translate →` — translate the selection into a chosen language
+    (English, Romanian, German, French, Spanish, Italian) instead of
+    rewriting it
 
-  Every mode is steered with a few built-in bilingual (English/Romanian)
-  examples, so the rewrite keeps the input's language and stays output-only.
+  Every rewriting mode is steered with a few built-in bilingual
+  (English/Romanian) examples, so the rewrite keeps the input's language and
+  stays output-only.
 - **Compose…** — open the window without selecting anything: optionally fill
   the **Context** line, type or paste text, `Ctrl+Enter` rephrases it with the
   active mode, `Enter` copies the result to the clipboard. The window stays

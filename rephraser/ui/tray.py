@@ -13,7 +13,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
-from rephraser.core.llm.base import MODES
+from rephraser.core.llm.base import MODES, TRANSLATE_LANGUAGES, TRANSLATE_PREFIX
 
 
 def _make_icon() -> QIcon:
@@ -53,15 +53,28 @@ class TrayIcon(QSystemTrayIcon):
         self._enabled_action.toggled.connect(self.enabled_toggled)
         menu.addAction(self._enabled_action)
 
-        mode_menu = menu.addMenu("Mode")
-        self._mode_group = QActionGroup(mode_menu)
+        # Keep submenus referenced on self: PySide6 may otherwise garbage-
+        # collect the QMenu wrappers returned by addMenu() and delete the
+        # C++ objects with them.
+        self._mode_menu = menu.addMenu("Mode")
+        self._mode_group = QActionGroup(self._mode_menu)
         for name in MODES:
-            action = QAction(name.capitalize(), mode_menu)
+            action = QAction(name.capitalize(), self._mode_menu)
             action.setCheckable(True)
             action.setChecked(name == mode)
             action.triggered.connect(lambda _=False, n=name: self.mode_selected.emit(n))
             self._mode_group.addAction(action)
-            mode_menu.addAction(action)
+            self._mode_menu.addAction(action)
+
+        self._translate_menu = self._mode_menu.addMenu("Translate")
+        for language in TRANSLATE_LANGUAGES:
+            key = TRANSLATE_PREFIX + language
+            action = QAction(language, self._translate_menu)
+            action.setCheckable(True)
+            action.setChecked(key == mode)
+            action.triggered.connect(lambda _=False, k=key: self.mode_selected.emit(k))
+            self._mode_group.addAction(action)
+            self._translate_menu.addAction(action)
 
         compose_action = QAction("Compose...", menu)
         compose_action.triggered.connect(self.compose_requested)
