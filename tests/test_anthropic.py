@@ -51,8 +51,51 @@ def test_streams_chunks():
     provider = _provider(fake)
     assert "".join(provider.rephrase("gm", "formal")) == "Good morning."
     assert fake.kwargs["model"] == "claude-opus-4-8"
-    assert fake.kwargs["messages"] == [{"role": "user", "content": "gm"}]
+    assert fake.kwargs["messages"][-1] == {"role": "user", "content": "gm"}
+    middle = fake.kwargs["messages"][:-1]  # few-shot example turns
+    assert middle, "expected few-shot example turns before the user message"
+    for i, m in enumerate(middle):
+        assert m["role"] == ("user" if i % 2 == 0 else "assistant")
     assert "ONLY the rewritten text" in fake.kwargs["system"]
+    # Non-strict requests use a low, faithful temperature (not the API default).
+    assert fake.kwargs["temperature"] == 0.3
+
+
+def test_config_default_matches_provider_default():
+    # The Config default and the provider's fallback constant must not drift.
+    from rephraser.config import Config
+    from rephraser.core.llm import anthropic as anthropic_module
+
+    assert Config().anthropic_model == anthropic_module.DEFAULT_MODEL
+
+
+def test_context_is_fenced_into_user_message():
+    fake = FakeClient(chunks=["ok"])
+    provider = _provider(fake)
+    list(provider.rephrase("gm", "formal", context="Reader is a child"))
+
+    user = fake.kwargs["messages"][-1]
+    assert user["role"] == "user"
+    assert "gm" in user["content"]
+    assert "Reader is a child" in user["content"]
+    assert "text to rewrite" in user["content"].lower()
+
+
+def test_no_context_leaves_user_message_plain():
+    fake = FakeClient(chunks=["ok"])
+    provider = _provider(fake)
+    list(provider.rephrase("gm", "formal"))
+
+    assert fake.kwargs["messages"][-1] == {"role": "user", "content": "gm"}
+
+
+def test_strict_sets_low_temperature_and_adds_corrective():
+    fake = FakeClient(chunks=["ok"])
+    provider = _provider(fake)
+    list(provider.rephrase("gm", "formal", strict=True))
+
+    assert fake.kwargs.get("temperature", 1.0) <= 0.2
+    assert "previous attempt" in fake.kwargs["messages"][-1]["content"].lower()
 
 
 def test_auth_error_maps_to_provider_error():

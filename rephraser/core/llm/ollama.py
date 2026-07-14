@@ -8,7 +8,13 @@ from collections.abc import Iterator
 
 import requests
 
-from .base import ProviderError, RephraseProvider, system_prompt
+from .base import (
+    ProviderError,
+    RephraseProvider,
+    build_user_message,
+    example_messages,
+    system_prompt,
+)
 
 CONNECT_TIMEOUT_S = 5.0
 
@@ -45,24 +51,32 @@ class OllamaProvider(RephraseProvider):
         except Exception:  # noqa: BLE001 - best-effort abort
             pass
 
-    def rephrase(self, text: str, mode: str) -> Iterator[str]:
+    def rephrase(
+        self, text: str, mode: str, context: str = "", strict: bool = False
+    ) -> Iterator[str]:
         try:
-            yield from self._stream_chat(text, mode)
+            yield from self._stream_chat(text, mode, context, strict)
         except Exception:  # noqa: BLE001 - cross-thread close raises varied types
             if self._cancelled:
                 return  # aborted by cancel(); the outcome no longer matters
             raise
 
-    def _stream_chat(self, text: str, mode: str) -> Iterator[str]:
+    def _stream_chat(
+        self, text: str, mode: str, context: str = "", strict: bool = False
+    ) -> Iterator[str]:
+        # Low temperature: rephrasing wants faithful, stable rewrites, not
+        # creative variance (small models echo or drift languages at 0.8); the
+        # strict retry drops it further to nudge the model off a bad first take.
+        # num_ctx gives headroom for the system prompt + few-shot examples + the
+        # user's text so nothing is silently truncated on gemma3:12b.
         payload = {
             "model": self._model,
             "stream": True,
-            # Low temperature: rephrasing wants faithful, stable rewrites, not
-            # creative variance (small models echo or drift languages at 0.8).
-            "options": {"temperature": 0.3},
+            "options": {"temperature": 0.1 if strict else 0.3, "num_ctx": 8192},
             "messages": [
                 {"role": "system", "content": system_prompt(mode)},
-                {"role": "user", "content": text},
+                *example_messages(mode),
+                {"role": "user", "content": build_user_message(text, context, strict)},
             ],
         }
         try:

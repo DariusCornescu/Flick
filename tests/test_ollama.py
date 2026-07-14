@@ -100,8 +100,85 @@ def test_streams_chunks(monkeypatch):
     assert captured["url"] == "http://localhost:11434/api/chat"
     assert captured["payload"]["model"] == "llama3.2"
     assert captured["payload"]["stream"] is True
-    assert captured["payload"]["messages"][0]["role"] == "system"
-    assert captured["payload"]["messages"][1] == {"role": "user", "content": "hi"}
+    msgs = captured["payload"]["messages"]
+    assert msgs[0]["role"] == "system"
+    assert msgs[-1] == {"role": "user", "content": "hi"}
+    middle = msgs[1:-1]  # few-shot example turns
+    assert middle, "expected few-shot example turns between system and user"
+    for i, m in enumerate(middle):
+        assert m["role"] == ("user" if i % 2 == 0 else "assistant")
+    assert captured["payload"]["options"]["num_ctx"] >= 8192
+
+
+def test_context_is_fenced_into_user_message(monkeypatch):
+    lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
+    captured = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        captured["payload"] = json
+        return FakeResponse(lines)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = OllamaProvider("http://localhost:11434", "llama3.2")
+    list(provider.rephrase("hi", "formal", context="Reader is a child"))
+
+    user = captured["payload"]["messages"][-1]
+    assert user["role"] == "user"
+    assert "hi" in user["content"]
+    assert "Reader is a child" in user["content"]
+    assert "text to rewrite" in user["content"].lower()
+
+
+def test_no_context_leaves_user_message_plain(monkeypatch):
+    lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
+    captured = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        captured["payload"] = json
+        return FakeResponse(lines)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = OllamaProvider("http://localhost:11434", "llama3.2")
+    list(provider.rephrase("hi", "formal"))
+
+    assert captured["payload"]["messages"][-1] == {"role": "user", "content": "hi"}
+
+
+def test_strict_lowers_temperature_and_adds_corrective(monkeypatch):
+    lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
+    captured = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        captured["payload"] = json
+        return FakeResponse(lines)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = OllamaProvider("http://localhost:11434", "llama3.2")
+    list(provider.rephrase("hi", "formal", strict=True))
+
+    assert captured["payload"]["options"]["temperature"] <= 0.1
+    assert "previous attempt" in captured["payload"]["messages"][-1]["content"].lower()
+
+
+def test_context_and_strict_combine_in_user_message(monkeypatch):
+    # The real retry path for a user with a default context sets BOTH; the
+    # fenced context and the strict correction must coexist in the user turn.
+    lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
+    captured = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        captured["payload"] = json
+        return FakeResponse(lines)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = OllamaProvider("http://localhost:11434", "llama3.2")
+    list(provider.rephrase("hi", "formal", context="Reader is a child", strict=True))
+
+    content = captured["payload"]["messages"][-1]["content"].lower()
+    assert "reader is a child" in content
+    assert "text to rewrite" in content
+    assert "previous attempt" in content
+    assert captured["payload"]["options"]["temperature"] <= 0.1
 
 
 def test_connection_error_maps_to_provider_error(monkeypatch):

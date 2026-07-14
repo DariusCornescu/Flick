@@ -7,9 +7,15 @@ from typing import Any
 
 import anthropic
 
-from .base import ProviderError, RephraseProvider, system_prompt
+from .base import (
+    ProviderError,
+    RephraseProvider,
+    build_user_message,
+    example_messages,
+    system_prompt,
+)
 
-DEFAULT_MODEL = "claude-opus-4-8"
+DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOKENS = 8192
 
 
@@ -45,21 +51,34 @@ class AnthropicProvider(RephraseProvider):
             except Exception:  # noqa: BLE001 - best-effort abort
                 pass
 
-    def rephrase(self, text: str, mode: str) -> Iterator[str]:
+    def rephrase(
+        self, text: str, mode: str, context: str = "", strict: bool = False
+    ) -> Iterator[str]:
         try:
-            yield from self._stream_text(text, mode)
+            yield from self._stream_text(text, mode, context, strict)
         except Exception:  # noqa: BLE001 - cross-thread close raises varied types
             if self._cancelled:
                 return  # aborted by cancel(); the outcome no longer matters
             raise
 
-    def _stream_text(self, text: str, mode: str) -> Iterator[str]:
+    def _stream_text(
+        self, text: str, mode: str, context: str = "", strict: bool = False
+    ) -> Iterator[str]:
         try:
             with self._client.messages.stream(
                 model=self._model,
                 max_tokens=MAX_TOKENS,
+                # A low temperature keeps rewrites faithful; the strict retry
+                # goes lower still to shake off a bad first attempt.
+                temperature=0.2 if strict else 0.3,
                 system=system_prompt(mode),
-                messages=[{"role": "user", "content": text}],
+                messages=[
+                    *example_messages(mode),
+                    {
+                        "role": "user",
+                        "content": build_user_message(text, context, strict),
+                    },
+                ],
             ) as stream:
                 with self._cancel_lock:
                     registered = not self._cancelled

@@ -102,6 +102,116 @@ def mode_label(mode: str) -> str:
     return mode
 
 
+# Few-shot examples per mode: (rough input, ideal rewrite) pairs. These ship as
+# real message turns rather than as more system-prompt text because small local
+# models (gemma3) regress when the system string grows (they start echoing the
+# input). Each mode carries an English and a Romanian pair so the model keeps
+# the input's language; `prompt` mode adds a question->instruction example.
+EXAMPLES: dict[str, list[tuple[str, str]]] = {
+    "formal": [
+        (
+            "hey, can you send me that file when you get a sec?",
+            "Could you please send me that file when you have a moment?",
+        ),
+        (
+            "salut, poți să-mi trimiți fișierul când ai timp?",
+            "Bună ziua, ați putea să îmi trimiteți fișierul când aveți timp?",
+        ),
+    ],
+    "concise": [
+        (
+            "I just wanted to quickly reach out and let you know that the"
+            " meeting has been moved to 3pm this afternoon.",
+            "The meeting is moved to 3pm.",
+        ),
+        (
+            "voiam doar să te anunț rapid că ședința a fost mutată la ora 3.",
+            "Ședința s-a mutat la ora 15.",
+        ),
+    ],
+    "grammar": [
+        (
+            "he dont know where their going tomorow",
+            "He doesn't know where they're going tomorrow.",
+        ),
+        (
+            "ei nu stie unde sa mearga maine",
+            "Ei nu știu unde să meargă mâine.",
+        ),
+    ],
+    "casual": [
+        (
+            "Please be advised that the deliverable will be completed by end"
+            " of business day.",
+            "Heads up - I'll have it done by the end of the day.",
+        ),
+        (
+            "Vă informez că sarcina va fi finalizată până la sfârșitul zilei.",
+            "Îți zic doar că termin treaba până diseară.",
+        ),
+    ],
+    "prompt": [
+        (
+            "you forgot to add validation on the login form and the error"
+            " messages don't show",
+            "Add validation to the login form and make sure the error messages"
+            " display correctly.",
+        ),
+        (
+            "nu mi-ai pus validare pe login și nu apar mesajele de eroare",
+            "Adaugă validare pe formularul de login și asigură-te că mesajele"
+            " de eroare apar.",
+        ),
+        (
+            "why does the app crash when I open settings?",
+            "Find the cause of the crash that happens when opening settings"
+            " and fix it.",
+        ),
+    ],
+}
+
+
+def example_messages(mode: str) -> list[dict[str, str]]:
+    """Alternating user/assistant few-shot turns for *mode*.
+
+    Empty for a mode with no examples (and for unknown modes), so callers can
+    splice the result into a message list unconditionally."""
+    turns: list[dict[str, str]] = []
+    for user_text, assistant_text in EXAMPLES.get(mode, []):
+        turns.append({"role": "user", "content": user_text})
+        turns.append({"role": "assistant", "content": assistant_text})
+    return turns
+
+
+_STRICT_CORRECTION = (
+    "\n\nYour previous attempt was rejected (it repeated the input, refused, or"
+    " added extra text). Output ONLY the rewritten text: it MUST differ from the"
+    " original, with no preamble, quotation marks, or code fences."
+)
+
+
+def build_user_message(text: str, context: str = "", strict: bool = False) -> str:
+    """The user turn for a rephrase.
+
+    With no context, this is just *text*. With context, *text* is preceded by
+    a clearly fenced context block the model must treat as reference only - so
+    it steers the rewrite without being rewritten or answered itself. When
+    *strict*, a corrective note is appended for a retry after a failed attempt."""
+    context = context.strip()
+    if context:
+        body = (
+            "Context (reference only - do not rewrite or answer this):\n"
+            f"{context}\n\n"
+            "Text to rewrite:\n"
+            f"{text}"
+        )
+    else:
+        body = text
+    if strict:
+        body += _STRICT_CORRECTION
+    return body
+
+
 class ProviderError(RuntimeError):
     """A user-presentable provider failure (unreachable, auth, timeout...)."""
 
@@ -112,8 +222,15 @@ class RephraseProvider(ABC):
     name: str = "base"
 
     @abstractmethod
-    def rephrase(self, text: str, mode: str) -> Iterator[str]:
-        """Yield chunks of the rewritten text. Raises ProviderError on failure."""
+    def rephrase(
+        self, text: str, mode: str, context: str = "", strict: bool = False
+    ) -> Iterator[str]:
+        """Yield chunks of the rewritten text. Raises ProviderError on failure.
+
+        *context*, if given, is reference material fenced into the prompt to
+        steer the rewrite; it is never itself rewritten. *strict* re-prompts
+        more forcefully (and at a lower temperature) for a retry after a failed
+        first attempt."""
 
     def cancel(self) -> None:
         """Abort an in-flight :meth:`rephrase` promptly. Thread-safe.

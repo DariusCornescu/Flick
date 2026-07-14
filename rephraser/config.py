@@ -21,13 +21,20 @@ RUN_VALUE_NAME = "Rephraser"
 class Config:
     provider: str = "ollama"  # "ollama" | "anthropic"
     ollama_url: str = "http://localhost:11434"
-    # gemma3 is multilingual (Romanian + English included); llama3.2 is not.
-    ollama_model: str = "gemma3:4b"
-    anthropic_model: str = "claude-opus-4-8"
+    # gemma3:12b (~8 GB) is the default: multilingual (Romanian + English) and
+    # markedly better at nuanced rewrites than the 4b it replaced. gemma3:4b is
+    # a lighter multilingual fallback; llama3.2 is smaller but English-only.
+    ollama_model: str = "gemma3:12b"
+    anthropic_model: str = "claude-sonnet-5"
     hotkey: str = DEFAULT_HOTKEY
     mode: str = "formal"
     enabled: bool = True
     request_timeout: float = 60.0
+    # Optional standing context applied to every rephrase (e.g. what you are
+    # working on). Fenced off from the text so the model never rewrites it.
+    default_context: str = ""
+    # Opt-in: append each accepted rephrase to a local JSONL training-data file.
+    log_pairs: bool = False
 
     @staticmethod
     def path() -> Path:

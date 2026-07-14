@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
@@ -10,10 +11,12 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from rephraser import config as config_mod
 from rephraser.config import Config
 from rephraser.core.capture import ClipboardCapture
+from rephraser.core import dataset
 from rephraser.core.hotkeys import HotkeyListener
 from rephraser.core.llm.anthropic import AnthropicProvider
 from rephraser.core.llm.base import ProviderError, RephraseProvider, mode_label
 from rephraser.core.llm.ollama import OllamaProvider
+from rephraser.core.quality import clean_output, needs_retry
 from rephraser.ui.popup import ResultPopup
 from rephraser.ui.settings import SettingsDialog
 from rephraser.ui.tray import TrayIcon
@@ -27,12 +30,16 @@ class RephraseWorker(QThread):
     chunk = Signal(str)
     finished_ok = Signal(str)
     failed = Signal(str)
+    retrying = Signal()  # first attempt failed the quality guard; re-streaming
 
-    def __init__(self, provider: RephraseProvider, text: str, mode: str) -> None:
+    def __init__(
+        self, provider: RephraseProvider, text: str, mode: str, context: str = ""
+    ) -> None:
         super().__init__()
         self._provider = provider
         self._text = text
         self._mode = mode
+        self._context = context
 
     def cancel(self) -> None:
         """Main-thread: stop the loop and abort any blocked provider read."""
@@ -43,28 +50,52 @@ class RephraseWorker(QThread):
             pass
 
     def run(self) -> None:  # worker thread - signals only, no UI
+        raw = self._attempt(strict=False)
+        if raw is None:
+            return  # interrupted, or a failure was already reported
+        if not self.isInterruptionRequested() and needs_retry(
+            self._text, raw, self._mode
+        ):
+            # First attempt echoed/refused/was empty: clear the popup and make
+            # one stricter, lower-temperature retry. Bounded to a single retry.
+            self.retrying.emit()
+            retry = self._attempt(strict=True)
+            if retry is None:
+                return
+            raw = retry
+        if self.isInterruptionRequested():
+            return  # cancelled: the session is torn down, report no outcome
+        final = clean_output(raw)
+        if final:
+            self.finished_ok.emit(final)
+        else:
+            self.failed.emit("The model returned an empty response.")
+
+    def _attempt(self, strict: bool) -> str | None:
+        """Stream one pass and return the raw joined text.
+
+        Returns None if the worker was interrupted mid-stream or a failure was
+        already emitted (the caller then stops without reporting an outcome)."""
         parts: list[str] = []
         try:
-            for piece in self._provider.rephrase(self._text, self._mode):
+            for piece in self._provider.rephrase(
+                self._text, self._mode, self._context, strict=strict
+            ):
                 if self.isInterruptionRequested():
-                    return
+                    return None
                 parts.append(piece)
                 self.chunk.emit(piece)
         except ProviderError as exc:
             if not self.isInterruptionRequested():
                 self.failed.emit(str(exc))
-            return
+            return None
         except Exception as exc:  # noqa: BLE001 - last resort: never crash the app
             if not self.isInterruptionRequested():
                 self.failed.emit(f"Unexpected error: {exc}")
-            return
+            return None
         if self.isInterruptionRequested():
-            return  # cancelled: the session is torn down, report no outcome
-        result = "".join(parts).strip()
-        if result:
-            self.finished_ok.emit(result)
-        else:
-            self.failed.emit("The model returned an empty response.")
+            return None
+        return "".join(parts)
 
 
 class RephraserApp(QObject):
@@ -83,6 +114,7 @@ class RephraserApp(QObject):
         # is delivered; letting it be garbage-collected while the thread runs
         # aborts the process (QThread destroyed while running).
         self._retired_workers: set[RephraseWorker] = set()
+        self._reset_log_meta()
 
         self._capture = ClipboardCapture()
         self._popup = ResultPopup()
@@ -90,10 +122,13 @@ class RephraserApp(QObject):
         self._popup.cancelled.connect(self._on_cancelled)
         self._popup.compose_submitted.connect(self._on_compose_submitted)
 
-        self._tray = TrayIcon(self._config.enabled, self._config.mode)
+        self._tray = TrayIcon(
+            self._config.enabled, self._config.mode, self._config.log_pairs
+        )
         self._tray.enabled_toggled.connect(self._on_enabled_toggled)
         self._tray.mode_selected.connect(self._on_mode_selected)
         self._tray.compose_requested.connect(self._open_compose)
+        self._tray.log_toggled.connect(self._on_log_toggled)
         self._tray.settings_requested.connect(self._open_settings)
         self._tray.quit_requested.connect(self._quit)
         self._tray.show()
@@ -111,11 +146,19 @@ class RephraserApp(QObject):
         self._config.mode = mode
         self._config.save()
 
+    def _on_log_toggled(self, enabled: bool) -> None:
+        self._config.log_pairs = enabled
+        self._config.save()
+
     def _open_settings(self) -> None:
         old_hotkey = self._config.hotkey
         dialog = SettingsDialog(self._config)
-        if dialog.exec() and self._config.hotkey != old_hotkey:
-            self._start_listener()
+        accepted = dialog.exec()
+        if accepted:
+            # Settings may have changed log_pairs; keep the tray toggle in sync.
+            self._tray.set_log_enabled(self._config.log_pairs)
+            if self._config.hotkey != old_hotkey:
+                self._start_listener()
 
     def _quit(self) -> None:
         self._listener.stop()
@@ -184,9 +227,14 @@ class RephraserApp(QObject):
                 )
                 return
 
+            self._stash_log_meta(text, self._config.default_context)
             self._popup.begin(mode_label(self._config.mode))
-            self._worker = RephraseWorker(provider, text, self._config.mode)
+            self._worker = RephraseWorker(
+                provider, text, self._config.mode,
+                context=self._config.default_context,
+            )
             self._worker.chunk.connect(self._on_chunk)
+            self._worker.retrying.connect(self._on_retrying)
             self._worker.finished_ok.connect(self._on_stream_done)
             self._worker.failed.connect(self._on_failed)
             self._worker.start()
@@ -204,8 +252,11 @@ class RephraserApp(QObject):
         self._manual_session = True
         self._popup.begin_compose(mode_label(self._config.mode))
 
-    def _on_compose_submitted(self, text: str) -> None:
-        """Compose text submitted; the popup already shows its streaming state."""
+    def _on_compose_submitted(self, text: str, context: str) -> None:
+        """Compose text submitted; the popup already shows its streaming state.
+
+        A per-session *context* typed in the popup overrides the standing
+        default context from Settings."""
         try:
             provider = self._make_provider()
         except ProviderError as exc:
@@ -218,8 +269,13 @@ class RephraserApp(QObject):
             self._popup.dismiss()
             self._finish_session(restore=False)
             return
-        self._worker = RephraseWorker(provider, text, self._config.mode)
+        effective_context = context or self._config.default_context
+        self._stash_log_meta(text, effective_context)
+        self._worker = RephraseWorker(
+            provider, text, self._config.mode, context=effective_context
+        )
         self._worker.chunk.connect(self._on_chunk)
+        self._worker.retrying.connect(self._on_retrying)
         self._worker.finished_ok.connect(self._on_stream_done)
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
@@ -245,9 +301,19 @@ class RephraserApp(QObject):
         if self.sender() is self._worker:
             self._popup.append_chunk(piece)
 
-    def _on_stream_done(self, _full_text: str) -> None:
+    def _on_retrying(self) -> None:
         if self.sender() is self._worker:
-            self._popup.finish_stream()
+            # Discard the rejected first attempt and show a refining state; the
+            # stricter retry streams into the cleared popup.
+            self._popup.clear_for_retry()
+
+    def _on_stream_done(self, full_text: str) -> None:
+        if self.sender() is self._worker:
+            # full_text is the cleaned result; show it (replacing the raw
+            # streamed chunks) and retain it for the training-data log so the
+            # edited flag reflects only genuine user edits.
+            self._log_raw = full_text
+            self._popup.finish_stream(full_text)
 
     def _on_failed(self, message: str) -> None:
         if self.sender() is not self._worker:
@@ -258,6 +324,7 @@ class RephraserApp(QObject):
 
     # -- popup outcomes --------------------------------------------------------
     def _on_accepted(self, text: str) -> None:
+        self._write_log_record(text)
         if self._manual_session:
             # No target selection to replace: the result goes to the clipboard.
             try:
@@ -300,6 +367,49 @@ class RephraserApp(QObject):
         self._retired_workers.discard(worker)
         worker.deleteLater()
 
+    # -- training-data logging -------------------------------------------------
+    def _reset_log_meta(self) -> None:
+        self._log_input = ""
+        self._log_mode = ""
+        self._log_context = ""
+        self._log_provider = ""
+        self._log_model = ""
+        self._log_raw = ""
+
+    def _stash_log_meta(self, text: str, context: str) -> None:
+        """Capture the inputs of the current session so an accepted result can
+        be logged as a training pair. Cheap and always safe to call."""
+        self._log_input = text
+        self._log_mode = self._config.mode
+        self._log_context = context
+        self._log_provider = self._config.provider
+        self._log_model = (
+            self._config.anthropic_model
+            if self._config.provider == "anthropic"
+            else self._config.ollama_model
+        )
+        self._log_raw = ""
+
+    def _write_log_record(self, final: str) -> None:
+        if not self._config.log_pairs:
+            return
+        try:
+            dataset.log_rephrase(
+                {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "provider": self._log_provider,
+                    "model": self._log_model,
+                    "mode": self._log_mode,
+                    "context": self._log_context,
+                    "input": self._log_input,
+                    "output": self._log_raw,
+                    "final": final,
+                    "edited": final != self._log_raw,
+                }
+            )
+        except Exception:  # noqa: BLE001 - logging must never break the paste flow
+            pass
+
     def _finish_session(self, restore: bool) -> None:
         self._stop_worker()
         # Manual sessions never took a clipboard backup; restoring would wipe
@@ -312,6 +422,7 @@ class RephraserApp(QObject):
         self._backup = ""
         self._busy = False
         self._manual_session = False
+        self._reset_log_meta()
 
 
 def main() -> int:

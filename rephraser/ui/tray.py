@@ -38,10 +38,11 @@ class TrayIcon(QSystemTrayIcon):
     enabled_toggled = Signal(bool)
     mode_selected = Signal(str)
     compose_requested = Signal()
+    log_toggled = Signal(bool)
     settings_requested = Signal()
     quit_requested = Signal()
 
-    def __init__(self, enabled: bool, mode: str) -> None:
+    def __init__(self, enabled: bool, mode: str, log_pairs: bool = False) -> None:
         super().__init__(_make_icon())
         self.setToolTip("Rephraser")
 
@@ -79,6 +80,12 @@ class TrayIcon(QSystemTrayIcon):
         compose_action.triggered.connect(self.compose_requested)
         menu.addAction(compose_action)
 
+        self._log_action = QAction("Log rephrases", menu)
+        self._log_action.setCheckable(True)
+        self._log_action.setChecked(log_pairs)
+        self._log_action.toggled.connect(self.log_toggled)
+        menu.addAction(self._log_action)
+
         menu.addSeparator()
         settings_action = QAction("Settings...", menu)
         settings_action.triggered.connect(self.settings_requested)
@@ -90,6 +97,13 @@ class TrayIcon(QSystemTrayIcon):
 
         self._menu = menu  # keep alive; QSystemTrayIcon does not take ownership
         self.setContextMenu(menu)
+
+    def set_log_enabled(self, enabled: bool) -> None:
+        """Sync the log toggle's checkmark (e.g. after Settings changed it)
+        without re-emitting log_toggled."""
+        self._log_action.blockSignals(True)
+        self._log_action.setChecked(enabled)
+        self._log_action.blockSignals(False)
 
     def notify(self, message: str, title: str = "Rephraser") -> None:
         self.showMessage(title, message, QSystemTrayIcon.MessageIcon.Warning, 4000)

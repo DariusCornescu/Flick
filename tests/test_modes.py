@@ -4,6 +4,7 @@ import pytest
 from rephraser.core.llm.base import (
     MODES,
     TRANSLATE_LANGUAGES,
+    example_messages,
     mode_label,
     system_prompt,
 )
@@ -47,6 +48,27 @@ def test_prompt_mode_demands_imperative_commands():
 def test_unknown_mode_raises():
     with pytest.raises(KeyError):
         system_prompt("pirate")
+
+
+# -- few-shot examples ---------------------------------------------------------
+
+def test_every_mode_ships_alternating_examples():
+    for mode in MODES:
+        turns = example_messages(mode)
+        assert turns, f"{mode} should ship few-shot examples"
+        for i, turn in enumerate(turns):
+            assert turn["role"] == ("user" if i % 2 == 0 else "assistant")
+            assert turn["content"].strip()
+
+
+def test_prompt_mode_has_bilingual_examples():
+    users = [t["content"] for t in example_messages("prompt") if t["role"] == "user"]
+    assert any(any(ch in t for ch in "ăâîșț") for t in users), "expected a Romanian example"
+    assert any(t.isascii() for t in users), "expected an English example"
+
+
+def test_example_messages_unknown_mode_is_empty():
+    assert example_messages("pirate") == []
 
 
 # -- translate:<language> ------------------------------------------------------

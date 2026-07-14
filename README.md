@@ -17,8 +17,9 @@ the Anthropic API.
    configured LLM provider.
 4. A frameless popup near the cursor shows the result as it is generated.
    When the stream finishes you can edit it. `Enter` inserts,
-   `Shift+Enter` adds a newline, `Esc` cancels (clicking elsewhere cancels too).
-   Drag the popup by its title to move it out of the way.
+   `Shift+Enter` adds a newline, `Esc` (or the × button) cancels. Clicking
+   another window no longer dismisses the popup, so you can look something up
+   mid-rewrite. Drag the popup by its title to move it out of the way.
 5. On confirm the result is placed on the clipboard, `Ctrl+V` is simulated,
    and ~0.5 s later your original clipboard is restored.
 
@@ -41,18 +42,20 @@ python -m venv .venv
 If you want the default local provider:
 
 ```powershell
-ollama pull gemma3:4b
+ollama pull gemma3:12b
 ```
 
-`gemma3:4b` is the default because it is properly multilingual — it rephrases
-Romanian and English (and most other languages) in the language of the input.
-If you only ever rephrase English you can switch to a smaller model like
-`llama3.2` in Settings, but note it does not officially support Romanian.
+`gemma3:12b` (~8 GB) is the default: it is properly multilingual — it
+rephrases Romanian and English (and most other languages) in the language of
+the input — and noticeably better at nuanced rewrites than smaller models. If
+your machine is tight on memory, `gemma3:4b` is a lighter multilingual
+fallback, and `llama3.2` is smaller still but English-only. Switch models in
+Settings.
 
-Rewrite quality scales with model size: if your machine can handle it,
-`gemma3:12b` (~8 GB) is noticeably better at nuanced rewrites, and the
-Anthropic provider is the highest-quality option. Requests are sent with
-`temperature 0.3` for stable, faithful rewrites.
+Rewrite quality scales with model size; the Anthropic provider is the
+highest-quality option. Requests are sent at a low `temperature` (0.3), with a
+generous local context window, for stable and faithful rewrites; a rewrite that
+echoes the input or refuses is retried once at an even lower temperature.
 
 ## Run
 
@@ -78,11 +81,24 @@ Right-click the tray icon:
   - `Translate →` — translate the selection into a chosen language
     (English, Romanian, German, French, Spanish, Italian) instead of
     rewriting it
-- **Compose…** — open the window without selecting anything: type or paste
-  text, `Ctrl+Enter` rephrases it with the active mode, `Enter` copies the
-  result to the clipboard. Unlike hotkey sessions, the compose window stays
+
+  Every rewriting mode is steered with a few built-in bilingual
+  (English/Romanian) examples, so the rewrite keeps the input's language and
+  stays output-only.
+- **Compose…** — open the window without selecting anything: optionally fill
+  the **Context** line, type or paste text, `Ctrl+Enter` rephrases it with the
+  active mode, `Enter` copies the result to the clipboard. The window stays
   open when you click elsewhere; close it with `Esc`.
-- **Settings…** — provider, models, API key, hotkey, run on startup.
+- **Log rephrases** — opt-in toggle to save each accepted rephrase to a local
+  training-data file (off by default). Also available in Settings.
+- **Settings…** — provider, models, API key, a standing **default context**,
+  hotkey, run on startup, and training-data logging.
+
+  **Context** is optional reference material — what you're working on, who the
+  reader is — that steers the rewrite without ever being rewritten itself. Set
+  a standing default in Settings (applied to every rephrase, including hotkey
+  sessions), or type a one-off context in the Compose window, which overrides
+  the default for that session.
 - **Quit**
 
 Settings are stored as JSON in `%APPDATA%\Rephraser\config.json`.
@@ -91,12 +107,23 @@ Settings are stored as JSON in `%APPDATA%\Rephraser\config.json`.
 
 | Provider    | Default model      | Notes                                                      |
 |-------------|--------------------|------------------------------------------------------------|
-| `ollama`    | `gemma3:4b`        | Default. Local & offline; multilingual (Romanian/English). |
-| `anthropic` | `claude-opus-4-8`  | Needs an API key. Fully multilingual.                      |
+| `ollama`    | `gemma3:12b`       | Default. Local & offline; multilingual (Romanian/English). |
+| `anthropic` | `claude-sonnet-5`  | Needs an API key. Fully multilingual.                      |
 
 The Anthropic API key is stored in the **Windows Credential Manager** via
 `keyring` (service `rephraser`) — it is never written to the JSON config or
 any other plaintext file.
+
+### Training-data logging
+
+Off by default. When you enable **Log rephrases** (tray menu or Settings), each
+rephrase you *accept* is appended as one JSON object per line to
+`%APPDATA%\Rephraser\training_data.jsonl`. It is **local only** — nothing is
+ever uploaded — and the file is safe to delete at any time. Each record holds
+the mode, provider/model, any context, the original `input`, the model's raw
+`output`, and the `final` text you accepted (with an `edited` flag), which is
+exactly the shape needed to later fine-tune a local model on your own rewrites.
+Use **Open data folder** in Settings to find the file.
 
 ### Hotkey format
 
