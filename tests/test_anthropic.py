@@ -51,7 +51,11 @@ def test_streams_chunks():
     provider = _provider(fake)
     assert "".join(provider.rephrase("gm", "formal")) == "Good morning."
     assert fake.kwargs["model"] == "claude-opus-4-8"
-    assert fake.kwargs["messages"] == [{"role": "user", "content": "gm"}]
+    assert fake.kwargs["messages"][-1] == {"role": "user", "content": "gm"}
+    middle = fake.kwargs["messages"][:-1]  # few-shot example turns
+    assert middle, "expected few-shot example turns before the user message"
+    for i, m in enumerate(middle):
+        assert m["role"] == ("user" if i % 2 == 0 else "assistant")
     assert "ONLY the rewritten text" in fake.kwargs["system"]
 
 

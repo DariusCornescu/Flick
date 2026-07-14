@@ -8,7 +8,7 @@ from collections.abc import Iterator
 
 import requests
 
-from .base import ProviderError, RephraseProvider, system_prompt
+from .base import ProviderError, RephraseProvider, example_messages, system_prompt
 
 CONNECT_TIMEOUT_S = 5.0
 
@@ -59,9 +59,12 @@ class OllamaProvider(RephraseProvider):
             "stream": True,
             # Low temperature: rephrasing wants faithful, stable rewrites, not
             # creative variance (small models echo or drift languages at 0.8).
-            "options": {"temperature": 0.3},
+            # num_ctx gives headroom for the system prompt + few-shot examples
+            # + the user's text so nothing is silently truncated on gemma3:12b.
+            "options": {"temperature": 0.3, "num_ctx": 8192},
             "messages": [
                 {"role": "system", "content": system_prompt(mode)},
+                *example_messages(mode),
                 {"role": "user", "content": text},
             ],
         }

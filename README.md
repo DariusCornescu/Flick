@@ -76,6 +76,9 @@ Right-click the tray icon:
   - `casual` — relax the tone
   - `prompt` — turn a rough note ("you forgot to do X") into a clear,
     actionable prompt for an AI assistant
+
+  Every mode is steered with a few built-in bilingual (English/Romanian)
+  examples, so the rewrite keeps the input's language and stays output-only.
 - **Compose…** — open the window without selecting anything: type or paste
   text, `Ctrl+Enter` rephrases it with the active mode, `Enter` copies the
   result to the clipboard. Unlike hotkey sessions, the compose window stays

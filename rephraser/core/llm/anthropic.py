@@ -7,7 +7,7 @@ from typing import Any
 
 import anthropic
 
-from .base import ProviderError, RephraseProvider, system_prompt
+from .base import ProviderError, RephraseProvider, example_messages, system_prompt
 
 DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOKENS = 8192
@@ -59,7 +59,10 @@ class AnthropicProvider(RephraseProvider):
                 model=self._model,
                 max_tokens=MAX_TOKENS,
                 system=system_prompt(mode),
-                messages=[{"role": "user", "content": text}],
+                messages=[
+                    *example_messages(mode),
+                    {"role": "user", "content": text},
+                ],
             ) as stream:
                 with self._cancel_lock:
                     registered = not self._cancelled
