@@ -9,7 +9,7 @@ import anthropic
 
 from .base import ProviderError, RephraseProvider, system_prompt
 
-DEFAULT_MODEL = "claude-opus-4-8"
+DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOKENS = 8192
 
 

@@ -18,6 +18,8 @@ def test_defaults_when_no_file():
     assert cfg.hotkey == "<ctrl>+<alt>+r"
     assert cfg.mode == "formal"
     assert cfg.enabled is True
+    assert cfg.ollama_model == "gemma3:12b"
+    assert cfg.anthropic_model == "claude-sonnet-5"
 
 
 def test_round_trip(appdata):

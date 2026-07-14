@@ -55,6 +55,14 @@ def test_streams_chunks():
     assert "ONLY the rewritten text" in fake.kwargs["system"]
 
 
+def test_config_default_matches_provider_default():
+    # The Config default and the provider's fallback constant must not drift.
+    from rephraser.config import Config
+    from rephraser.core.llm import anthropic as anthropic_module
+
+    assert Config().anthropic_model == anthropic_module.DEFAULT_MODEL
+
+
 def test_auth_error_maps_to_provider_error():
     error = anthropic.AuthenticationError(
         message="bad key", response=_fake_httpx_response(401), body=None
