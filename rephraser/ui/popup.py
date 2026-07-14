@@ -3,7 +3,14 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPoint, Qt, Signal
 from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent
-from PySide6.QtWidgets import QLabel, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 _STYLE = """
 QWidget#popupRoot {
@@ -13,6 +20,15 @@ QWidget#popupRoot {
 }
 QLabel { color: #9aa4b2; font-size: 11px; }
 QLabel#title { color: #e6e9ef; font-size: 12px; font-weight: 600; }
+QPushButton#close {
+    color: #9aa4b2;
+    background: transparent;
+    border: none;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 0;
+}
+QPushButton#close:hover { color: #e6e9ef; }
 QPlainTextEdit {
     background: #1b1e24;
     color: #e6e9ef;
@@ -44,14 +60,28 @@ class ResultPopup(QWidget):
         self._title = QLabel("Rephrase")
         self._title.setObjectName("title")
         self._title.setCursor(Qt.CursorShape.SizeAllCursor)  # drag handle hint
+        # Click-away no longer dismisses the popup (only Esc does), so give a
+        # visible affordance to close it.
+        self._close_btn = QPushButton("×")
+        self._close_btn.setObjectName("close")
+        self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._close_btn.setFixedSize(20, 20)
+        self._close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # never steal editor focus
+        self._close_btn.clicked.connect(self._cancel)
         self._status = QLabel("")
         self._editor = QPlainTextEdit()
         self._editor.installEventFilter(self)
 
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(6)
+        title_row.addWidget(self._title, 1)
+        title_row.addWidget(self._close_btn)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(6)
-        layout.addWidget(self._title)
+        layout.addLayout(title_row)
         layout.addWidget(self._editor)
         layout.addWidget(self._status)
 
@@ -173,19 +203,6 @@ class ResultPopup(QWidget):
             self._cancel()
             return
         super().keyPressEvent(event)
-
-    def event(self, event) -> bool:  # noqa: N802
-        if (
-            event.type() == QEvent.Type.WindowDeactivate
-            and self.isVisible()
-            and not self._closing_silently
-            and not self._composing
-        ):
-            # Transient popup: clicking elsewhere abandons the rephrase.
-            # Compose sessions are user-opened windows; only Esc closes them,
-            # so clicking away to copy something does not lose typed text.
-            self._cancel()
-        return super().event(event)
 
     def closeEvent(self, event) -> None:  # noqa: N802
         if not self._closing_silently:

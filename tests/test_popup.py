@@ -149,17 +149,21 @@ def test_compose_survives_click_away(popup):
     assert popup.isVisible()
 
 
-def test_selection_session_still_cancels_on_click_away(popup):
+def test_selection_session_survives_click_away(popup):
+    # Regression: a hotkey/selection popup must NOT cancel when it loses focus.
+    # A spurious WindowDeactivate arrives right after the simulated Ctrl+C, and
+    # cancelling on it tore down the session mid-stream ("closes while typing").
     popup.begin("formal")
     fired = []
     popup.cancelled.connect(lambda: fired.append(1))
 
     popup.event(QEvent(QEvent.Type.WindowDeactivate))
 
-    assert fired == [1]
+    assert fired == []
+    assert popup.isVisible()
 
 
-def test_begin_after_compose_resets_click_away_rule(popup):
+def test_selection_survives_deactivate_after_prior_compose(popup):
     popup.begin_compose("prompt")
     popup.dismiss()
     popup.begin("formal")
@@ -168,7 +172,44 @@ def test_begin_after_compose_resets_click_away_rule(popup):
 
     popup.event(QEvent(QEvent.Type.WindowDeactivate))
 
+    assert fired == []
+    assert popup.isVisible()
+
+
+def test_streaming_selection_survives_deactivate(popup):
+    popup.begin("formal")
+    popup.append_chunk("partial")  # streaming: _done is False
+    fired = []
+    popup.cancelled.connect(lambda: fired.append(1))
+
+    popup.event(QEvent(QEvent.Type.WindowDeactivate))
+
+    assert fired == []
+    assert popup.isVisible()
+
+
+def test_done_selection_survives_deactivate(popup):
+    popup.begin("formal")
+    popup.append_chunk("Result")
+    popup.finish_stream()  # done: editable
+    fired = []
+    popup.cancelled.connect(lambda: fired.append(1))
+
+    popup.event(QEvent(QEvent.Type.WindowDeactivate))
+
+    assert fired == []
+    assert popup.isVisible()
+
+
+def test_close_button_cancels(popup):
+    popup.begin("formal")
+    fired = []
+    popup.cancelled.connect(lambda: fired.append(1))
+
+    popup._close_btn.click()
+
     assert fired == [1]
+    assert not popup.isVisible()
 
 
 def test_escape_in_compose_cancels(popup, qtbot):
