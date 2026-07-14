@@ -85,8 +85,10 @@ Right-click the tray icon:
   the **Context** line, type or paste text, `Ctrl+Enter` rephrases it with the
   active mode, `Enter` copies the result to the clipboard. The window stays
   open when you click elsewhere; close it with `Esc`.
+- **Log rephrases** — opt-in toggle to save each accepted rephrase to a local
+  training-data file (off by default). Also available in Settings.
 - **Settings…** — provider, models, API key, a standing **default context**,
-  hotkey, run on startup.
+  hotkey, run on startup, and training-data logging.
 
   **Context** is optional reference material — what you're working on, who the
   reader is — that steers the rewrite without ever being rewritten itself. Set
@@ -107,6 +109,17 @@ Settings are stored as JSON in `%APPDATA%\Rephraser\config.json`.
 The Anthropic API key is stored in the **Windows Credential Manager** via
 `keyring` (service `rephraser`) — it is never written to the JSON config or
 any other plaintext file.
+
+### Training-data logging
+
+Off by default. When you enable **Log rephrases** (tray menu or Settings), each
+rephrase you *accept* is appended as one JSON object per line to
+`%APPDATA%\Rephraser\training_data.jsonl`. It is **local only** — nothing is
+ever uploaded — and the file is safe to delete at any time. Each record holds
+the mode, provider/model, any context, the original `input`, the model's raw
+`output`, and the `final` text you accepted (with an `edited` flag), which is
+exactly the shape needed to later fine-tune a local model on your own rewrites.
+Use **Open data folder** in Settings to find the file.
 
 ### Hotkey format
 

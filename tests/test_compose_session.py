@@ -28,9 +28,13 @@ class RecordingPopup:
     def __init__(self):
         self.compose_begun = []
         self.dismissed = 0
+        self.finished = 0
 
     def begin_compose(self, mode):
         self.compose_begun.append(mode)
+
+    def finish_stream(self):
+        self.finished += 1
 
     def dismiss(self):
         self.dismissed += 1
@@ -78,7 +82,20 @@ class _StubApp(RephraserApp):
         self._capture = RecordingCapture()
         self._popup = RecordingPopup()
         self._tray = RecordingTray()
-        self._config = SimpleNamespace(mode="formal", default_context="")
+        self._config = SimpleNamespace(
+            mode="formal",
+            default_context="",
+            log_pairs=False,
+            provider="ollama",
+            ollama_model="gemma3:12b",
+            anthropic_model="claude-sonnet-5",
+        )
+        self._log_input = ""
+        self._log_mode = ""
+        self._log_context = ""
+        self._log_provider = ""
+        self._log_model = ""
+        self._log_raw = ""
 
 
 def test_open_compose_begins_manual_session(qapp):
@@ -150,6 +167,47 @@ def test_compose_submit_starts_worker_with_typed_text(qapp):
         if worker is not None:
             worker.cancel()
             assert worker.wait(5000)
+
+
+def test_logs_pair_on_accept_when_enabled(qapp, monkeypatch):
+    app = _StubApp()
+    app._config.log_pairs = True
+    app._busy = True
+    app._manual_session = True
+    app._log_input = "raw input"
+    app._log_mode = "formal"
+    app._log_context = "ctx"
+    app._log_provider = "ollama"
+    app._log_model = "gemma3:12b"
+    records = []
+    monkeypatch.setattr("rephraser.core.dataset.log_rephrase", records.append)
+
+    app._on_stream_done("RAW OUTPUT")  # retains the raw model output
+    app._on_accepted("FINAL")          # writes the record, then copies
+
+    assert len(records) == 1
+    record = records[0]
+    assert record["input"] == "raw input"
+    assert record["mode"] == "formal"
+    assert record["context"] == "ctx"
+    assert record["output"] == "RAW OUTPUT"
+    assert record["final"] == "FINAL"
+    assert record["edited"] is True
+    assert app._capture.copied == ["FINAL"]
+
+
+def test_no_log_when_disabled(qapp, monkeypatch):
+    app = _StubApp()
+    app._config.log_pairs = False
+    app._busy = True
+    app._manual_session = True
+    app._log_raw = "RAW"
+    records = []
+    monkeypatch.setattr("rephraser.core.dataset.log_rephrase", records.append)
+
+    app._on_accepted("FINAL")
+
+    assert records == []
 
 
 def test_compose_submit_provider_error_finishes_session(qapp):

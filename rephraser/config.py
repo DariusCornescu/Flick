@@ -33,6 +33,8 @@ class Config:
     # Optional standing context applied to every rephrase (e.g. what you are
     # working on). Fenced off from the text so the model never rewrites it.
     default_context: str = ""
+    # Opt-in: append each accepted rephrase to a local JSONL training-data file.
+    log_pairs: bool = False
 
     @staticmethod
     def path() -> Path:

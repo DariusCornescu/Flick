@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from rephraser import config as config_mod
 from rephraser.config import Config
 from rephraser.core.capture import ClipboardCapture
+from rephraser.core import dataset
 from rephraser.core.hotkeys import HotkeyListener
 from rephraser.core.llm.anthropic import AnthropicProvider
 from rephraser.core.llm.base import ProviderError, RephraseProvider
@@ -112,6 +114,7 @@ class RephraserApp(QObject):
         # is delivered; letting it be garbage-collected while the thread runs
         # aborts the process (QThread destroyed while running).
         self._retired_workers: set[RephraseWorker] = set()
+        self._reset_log_meta()
 
         self._capture = ClipboardCapture()
         self._popup = ResultPopup()
@@ -119,10 +122,13 @@ class RephraserApp(QObject):
         self._popup.cancelled.connect(self._on_cancelled)
         self._popup.compose_submitted.connect(self._on_compose_submitted)
 
-        self._tray = TrayIcon(self._config.enabled, self._config.mode)
+        self._tray = TrayIcon(
+            self._config.enabled, self._config.mode, self._config.log_pairs
+        )
         self._tray.enabled_toggled.connect(self._on_enabled_toggled)
         self._tray.mode_selected.connect(self._on_mode_selected)
         self._tray.compose_requested.connect(self._open_compose)
+        self._tray.log_toggled.connect(self._on_log_toggled)
         self._tray.settings_requested.connect(self._open_settings)
         self._tray.quit_requested.connect(self._quit)
         self._tray.show()
@@ -140,11 +146,19 @@ class RephraserApp(QObject):
         self._config.mode = mode
         self._config.save()
 
+    def _on_log_toggled(self, enabled: bool) -> None:
+        self._config.log_pairs = enabled
+        self._config.save()
+
     def _open_settings(self) -> None:
         old_hotkey = self._config.hotkey
         dialog = SettingsDialog(self._config)
-        if dialog.exec() and self._config.hotkey != old_hotkey:
-            self._start_listener()
+        accepted = dialog.exec()
+        if accepted:
+            # Settings may have changed log_pairs; keep the tray toggle in sync.
+            self._tray.set_log_enabled(self._config.log_pairs)
+            if self._config.hotkey != old_hotkey:
+                self._start_listener()
 
     def _quit(self) -> None:
         self._listener.stop()
@@ -213,6 +227,7 @@ class RephraserApp(QObject):
                 )
                 return
 
+            self._stash_log_meta(text, self._config.default_context)
             self._popup.begin(self._config.mode)
             self._worker = RephraseWorker(
                 provider, text, self._config.mode,
@@ -255,6 +270,7 @@ class RephraserApp(QObject):
             self._finish_session(restore=False)
             return
         effective_context = context or self._config.default_context
+        self._stash_log_meta(text, effective_context)
         self._worker = RephraseWorker(
             provider, text, self._config.mode, context=effective_context
         )
@@ -291,8 +307,9 @@ class RephraserApp(QObject):
             # stricter retry streams into the cleared popup.
             self._popup.clear_for_retry()
 
-    def _on_stream_done(self, _full_text: str) -> None:
+    def _on_stream_done(self, full_text: str) -> None:
         if self.sender() is self._worker:
+            self._log_raw = full_text  # retained for the training-data log
             self._popup.finish_stream()
 
     def _on_failed(self, message: str) -> None:
@@ -304,6 +321,7 @@ class RephraserApp(QObject):
 
     # -- popup outcomes --------------------------------------------------------
     def _on_accepted(self, text: str) -> None:
+        self._write_log_record(text)
         if self._manual_session:
             # No target selection to replace: the result goes to the clipboard.
             try:
@@ -346,6 +364,49 @@ class RephraserApp(QObject):
         self._retired_workers.discard(worker)
         worker.deleteLater()
 
+    # -- training-data logging -------------------------------------------------
+    def _reset_log_meta(self) -> None:
+        self._log_input = ""
+        self._log_mode = ""
+        self._log_context = ""
+        self._log_provider = ""
+        self._log_model = ""
+        self._log_raw = ""
+
+    def _stash_log_meta(self, text: str, context: str) -> None:
+        """Capture the inputs of the current session so an accepted result can
+        be logged as a training pair. Cheap and always safe to call."""
+        self._log_input = text
+        self._log_mode = self._config.mode
+        self._log_context = context
+        self._log_provider = self._config.provider
+        self._log_model = (
+            self._config.anthropic_model
+            if self._config.provider == "anthropic"
+            else self._config.ollama_model
+        )
+        self._log_raw = ""
+
+    def _write_log_record(self, final: str) -> None:
+        if not self._config.log_pairs:
+            return
+        try:
+            dataset.log_rephrase(
+                {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "provider": self._log_provider,
+                    "model": self._log_model,
+                    "mode": self._log_mode,
+                    "context": self._log_context,
+                    "input": self._log_input,
+                    "output": self._log_raw,
+                    "final": final,
+                    "edited": final != self._log_raw,
+                }
+            )
+        except Exception:  # noqa: BLE001 - logging must never break the paste flow
+            pass
+
     def _finish_session(self, restore: bool) -> None:
         self._stop_worker()
         # Manual sessions never took a clipboard backup; restoring would wipe
@@ -358,6 +419,7 @@ class RephraserApp(QObject):
         self._backup = ""
         self._busy = False
         self._manual_session = False
+        self._reset_log_meta()
 
 
 def main() -> int:

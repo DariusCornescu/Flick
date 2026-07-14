@@ -9,11 +9,13 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QVBoxLayout,
 )
 
 from rephraser import config as config_mod
 from rephraser.config import Config
+from rephraser.core import dataset
 from rephraser.core.hotkeys import HotkeyListener
 
 
@@ -51,6 +53,11 @@ class SettingsDialog(QDialog):
         except OSError:
             self._startup.setEnabled(False)
 
+        self._log_pairs = QCheckBox("Log rephrases locally for training")
+        self._log_pairs.setChecked(cfg.log_pairs)
+        self._open_folder = QPushButton("Open data folder")
+        self._open_folder.clicked.connect(lambda: dataset.open_log_folder())
+
         form = QFormLayout()
         form.addRow("Provider:", self._provider)
         form.addRow("Ollama URL:", self._ollama_url)
@@ -60,6 +67,8 @@ class SettingsDialog(QDialog):
         form.addRow("Default context:", self._default_context)
         form.addRow("Hotkey:", self._hotkey)
         form.addRow("", self._startup)
+        form.addRow("", self._log_pairs)
+        form.addRow("", self._open_folder)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -93,6 +102,7 @@ class SettingsDialog(QDialog):
         self._cfg.hotkey = combo
         # Not the "or existing" idiom: an emptied field must clear the context.
         self._cfg.default_context = self._default_context.text().strip()
+        self._cfg.log_pairs = self._log_pairs.isChecked()
         self._cfg.save()
 
         new_key = self._api_key.text().strip()

@@ -37,6 +37,13 @@ def test_default_context_round_trips(appdata):
     assert Config.load().default_context == "Reader is a 5-year-old"
 
 
+def test_log_pairs_default_false_and_round_trips(appdata):
+    assert Config().log_pairs is False
+    cfg = Config(log_pairs=True)
+    cfg.save()
+    assert Config.load().log_pairs is True
+
+
 def test_corrupt_file_returns_defaults(appdata):
     path = appdata / "Rephraser" / "config.json"
     path.parent.mkdir(parents=True)
