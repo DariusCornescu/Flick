@@ -49,6 +49,20 @@ def test_keeps_multiblock_output_with_inner_fences():
     assert clean_output(text) == text
 
 
+def test_keeps_romanian_content_heading():
+    # A colon-terminated Romanian heading that is real content must survive.
+    for text in (
+        "Iată pașii de urmat:\nMai întâi fierbe apa.\nApoi adaugă pastele.",
+        "Iată planul:\nLansăm luni.",
+    ):
+        assert clean_output(text) == text
+
+
+def test_still_strips_romanian_preamble():
+    assert clean_output("Iată textul rescris:\nSalut acolo.") == "Salut acolo."
+    assert clean_output("Rezultatul:\nSalut acolo.") == "Salut acolo."
+
+
 def test_keeps_internal_quotes():
     assert clean_output('He said "hi" to me.') == 'He said "hi" to me.'
 
@@ -142,11 +156,18 @@ def test_no_retry_on_romanian_polite_declines():
     )
 
 
+def test_no_retry_on_romanian_profession_ca_asistent():
+    # "ca asistent medical/universitar" = a profession, not an AI self-reference.
+    assert not needs_retry("x", "Lucrez ca asistent medical la spital.", "formal")
+    assert not needs_retry("x", "El lucrează ca asistent universitar.", "formal")
+
+
 def test_still_retries_genuine_task_refusals():
     assert needs_retry("x", "As an AI language model, I cannot comply.", "formal")
     assert needs_retry("x", "I can't help with that.", "formal")
     assert needs_retry("x", "I cannot rewrite this text.", "formal")
     assert needs_retry("ceva", "Nu pot reformula acest text.", "formal")
+    assert needs_retry("ceva", "Ca asistent AI, nu îți pot oferi asta.", "formal")
 
 
 def test_no_retry_on_a_good_rewrite():

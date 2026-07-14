@@ -37,8 +37,16 @@ _INTERJECTION_ONLY = re.compile(
     r"^(?:sure|certainly|of course|okay|ok|absolutely)[,.!]?\s*$",
     re.IGNORECASE,
 )
+# Like _PREAMBLE, an "iată ...:" line is stripped only when it references the
+# output (textul/rezultatul/varianta/... rescris), so a real content heading
+# like "Iată pașii de urmat:" is preserved.
 _PREAMBLE_RO = re.compile(
-    r"^(?:iată[^\n]*|rezultat(?:ul)?|textul rescris)[^\n]*:\s*$",
+    r"^(?:"
+    r"iată[^\n]*\b(?:textul|rezultatul|varianta|versiunea|reformularea|"
+    r"rescris|rescrisă|reformulat|reformulată)\b[^\n]*:|"
+    r"rezultat(?:ul)?:|"
+    r"textul rescris:"
+    r")\s*$",
     re.IGNORECASE,
 )
 
@@ -68,7 +76,7 @@ _REFUSAL = re.compile(
     r"i (?:can'?t|cannot) help with (?:that|this)\b|"
     r"nu pot (?:să )?(?:reformula|rescrie|rescriu|te ajut cu (?:asta|aceasta)|"
     r"face (?:asta|acest lucru)|îndeplini)\b|"
-    r"ca (?:un )?asistent(?: ai)?\b"
+    r"ca (?:un )?asistent (?:ai|virtual|de limbaj)\b"
     r")",
     re.IGNORECASE,
 )

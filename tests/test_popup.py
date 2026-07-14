@@ -156,6 +156,29 @@ def test_selection_result_hint_still_says_insert(popup):
     assert "insert" in popup._status.text().lower()
 
 
+def test_finish_stream_replaces_editor_with_final_text(popup):
+    # The delivered/edited text must be the cleaned final, not the raw stream.
+    popup.begin("formal")
+    popup.append_chunk('"Hello there."')  # raw, wrapped in quotes
+    popup.finish_stream("Hello there.")   # cleaned final from the worker
+    assert popup._editor.toPlainText() == "Hello there."
+
+
+def test_compose_retry_keeps_copy_hint(popup, qtbot):
+    popup.begin_compose("prompt")
+    popup._editor.setPlainText("nota")
+    qtbot.keyClick(
+        popup._editor, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier
+    )
+    popup.append_chunk("bad first")
+    popup.finish_stream("bad first")
+    popup.clear_for_retry()
+    assert popup._composing  # compose state survives a retry
+    popup.append_chunk("good")
+    popup.finish_stream("good")
+    assert "copy" in popup._status.text().lower()  # still the compose hint
+
+
 def test_clear_for_retry_resets_to_streaming_state(popup):
     popup.begin("formal")
     popup.append_chunk("bad first attempt")

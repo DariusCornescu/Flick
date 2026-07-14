@@ -155,8 +155,15 @@ class ResultPopup(QWidget):
         self._editor.setPlainText("")
         self._status.setText("Refining... (Esc to cancel)")
 
-    def finish_stream(self) -> None:
+    def finish_stream(self, text: str | None = None) -> None:
         self._done = True
+        if text is not None:
+            # Replace the raw streamed chunks with the final (cleaned) result,
+            # so what the user edits/accepts/pastes matches what was produced.
+            self._editor.setPlainText(text)
+            cursor = self._editor.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            self._editor.setTextCursor(cursor)
         self._editor.setReadOnly(False)
         if self._composing:
             # A compose session has no target selection: Enter copies instead.

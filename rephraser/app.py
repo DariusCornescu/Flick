@@ -309,8 +309,11 @@ class RephraserApp(QObject):
 
     def _on_stream_done(self, full_text: str) -> None:
         if self.sender() is self._worker:
-            self._log_raw = full_text  # retained for the training-data log
-            self._popup.finish_stream()
+            # full_text is the cleaned result; show it (replacing the raw
+            # streamed chunks) and retain it for the training-data log so the
+            # edited flag reflects only genuine user edits.
+            self._log_raw = full_text
+            self._popup.finish_stream(full_text)
 
     def _on_failed(self, message: str) -> None:
         if self.sender() is not self._worker:
