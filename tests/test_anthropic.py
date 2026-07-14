@@ -67,6 +67,26 @@ def test_config_default_matches_provider_default():
     assert Config().anthropic_model == anthropic_module.DEFAULT_MODEL
 
 
+def test_context_is_fenced_into_user_message():
+    fake = FakeClient(chunks=["ok"])
+    provider = _provider(fake)
+    list(provider.rephrase("gm", "formal", context="Reader is a child"))
+
+    user = fake.kwargs["messages"][-1]
+    assert user["role"] == "user"
+    assert "gm" in user["content"]
+    assert "Reader is a child" in user["content"]
+    assert "text to rewrite" in user["content"].lower()
+
+
+def test_no_context_leaves_user_message_plain():
+    fake = FakeClient(chunks=["ok"])
+    provider = _provider(fake)
+    list(provider.rephrase("gm", "formal"))
+
+    assert fake.kwargs["messages"][-1] == {"role": "user", "content": "gm"}
+
+
 def test_auth_error_maps_to_provider_error():
     error = anthropic.AuthenticationError(
         message="bad key", response=_fake_httpx_response(401), body=None

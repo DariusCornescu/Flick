@@ -7,7 +7,13 @@ from typing import Any
 
 import anthropic
 
-from .base import ProviderError, RephraseProvider, example_messages, system_prompt
+from .base import (
+    ProviderError,
+    RephraseProvider,
+    build_user_message,
+    example_messages,
+    system_prompt,
+)
 
 DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOKENS = 8192
@@ -45,15 +51,15 @@ class AnthropicProvider(RephraseProvider):
             except Exception:  # noqa: BLE001 - best-effort abort
                 pass
 
-    def rephrase(self, text: str, mode: str) -> Iterator[str]:
+    def rephrase(self, text: str, mode: str, context: str = "") -> Iterator[str]:
         try:
-            yield from self._stream_text(text, mode)
+            yield from self._stream_text(text, mode, context)
         except Exception:  # noqa: BLE001 - cross-thread close raises varied types
             if self._cancelled:
                 return  # aborted by cancel(); the outcome no longer matters
             raise
 
-    def _stream_text(self, text: str, mode: str) -> Iterator[str]:
+    def _stream_text(self, text: str, mode: str, context: str = "") -> Iterator[str]:
         try:
             with self._client.messages.stream(
                 model=self._model,
@@ -61,7 +67,7 @@ class AnthropicProvider(RephraseProvider):
                 system=system_prompt(mode),
                 messages=[
                     *example_messages(mode),
-                    {"role": "user", "content": text},
+                    {"role": "user", "content": build_user_message(text, context)},
                 ],
             ) as stream:
                 with self._cancel_lock:

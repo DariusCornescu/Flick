@@ -30,6 +30,9 @@ class Config:
     mode: str = "formal"
     enabled: bool = True
     request_timeout: float = 60.0
+    # Optional standing context applied to every rephrase (e.g. what you are
+    # working on). Fenced off from the text so the model never rewrites it.
+    default_context: str = ""
 
     @staticmethod
     def path() -> Path:

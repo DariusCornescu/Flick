@@ -80,10 +80,30 @@ def test_ctrl_enter_submits_compose_text(popup, qtbot):
             popup._editor, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier
         )
 
-    assert blocker.args == ["fa asta mai clar"]
+    assert blocker.args == ["fa asta mai clar", ""]  # no context typed
     # the popup switched itself into the streaming state, input cleared
     assert popup._editor.isReadOnly()
     assert popup._editor.toPlainText() == ""
+
+
+def test_compose_submits_session_context(popup, qtbot):
+    popup.begin_compose("prompt")
+    popup._context_input.setText("despre pagina de login")
+    popup._editor.setPlainText("fa asta mai clar")
+
+    with qtbot.waitSignal(popup.compose_submitted, timeout=1000) as blocker:
+        qtbot.keyClick(
+            popup._editor, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier
+        )
+
+    assert blocker.args == ["fa asta mai clar", "despre pagina de login"]
+
+
+def test_selection_session_hides_context_input(popup):
+    popup.begin_compose("prompt")
+    assert popup._context_input.isVisible()
+    popup.begin("formal")
+    assert not popup._context_input.isVisible()
 
 
 def test_plain_enter_in_compose_inserts_newline(popup, qtbot):

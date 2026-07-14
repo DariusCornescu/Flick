@@ -54,8 +54,8 @@ class RecordingBlockingProvider(RephraseProvider):
         self.streaming = threading.Event()
         self._released = threading.Event()
 
-    def rephrase(self, text, mode):
-        self.calls.append((text, mode))
+    def rephrase(self, text, mode, context=""):
+        self.calls.append((text, mode, context))
         yield "chunk "
         self.streaming.set()
         self._released.wait(timeout=5.0)
@@ -78,7 +78,7 @@ class _StubApp(RephraserApp):
         self._capture = RecordingCapture()
         self._popup = RecordingPopup()
         self._tray = RecordingTray()
-        self._config = SimpleNamespace(mode="formal")
+        self._config = SimpleNamespace(mode="formal", default_context="")
 
 
 def test_open_compose_begins_manual_session(qapp):
@@ -140,11 +140,11 @@ def test_compose_submit_starts_worker_with_typed_text(qapp):
     provider = RecordingBlockingProvider()
     app._make_provider = lambda: provider
 
-    app._on_compose_submitted("textul meu")
+    app._on_compose_submitted("textul meu", "despre login")
     try:
         assert app._worker is not None
         assert provider.streaming.wait(timeout=5.0)
-        assert provider.calls == [("textul meu", "formal")]
+        assert provider.calls == [("textul meu", "formal", "despre login")]
     finally:
         worker = app._worker
         if worker is not None:
@@ -162,7 +162,7 @@ def test_compose_submit_provider_error_finishes_session(qapp):
 
     app._make_provider = boom
 
-    app._on_compose_submitted("x")
+    app._on_compose_submitted("x", "")
 
     assert app._tray.notices and "no key" in app._tray.notices[0]
     assert app._popup.dismissed == 1

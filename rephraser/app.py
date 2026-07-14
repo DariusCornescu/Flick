@@ -28,11 +28,14 @@ class RephraseWorker(QThread):
     finished_ok = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, provider: RephraseProvider, text: str, mode: str) -> None:
+    def __init__(
+        self, provider: RephraseProvider, text: str, mode: str, context: str = ""
+    ) -> None:
         super().__init__()
         self._provider = provider
         self._text = text
         self._mode = mode
+        self._context = context
 
     def cancel(self) -> None:
         """Main-thread: stop the loop and abort any blocked provider read."""
@@ -45,7 +48,7 @@ class RephraseWorker(QThread):
     def run(self) -> None:  # worker thread - signals only, no UI
         parts: list[str] = []
         try:
-            for piece in self._provider.rephrase(self._text, self._mode):
+            for piece in self._provider.rephrase(self._text, self._mode, self._context):
                 if self.isInterruptionRequested():
                     return
                 parts.append(piece)
@@ -185,7 +188,10 @@ class RephraserApp(QObject):
                 return
 
             self._popup.begin(self._config.mode)
-            self._worker = RephraseWorker(provider, text, self._config.mode)
+            self._worker = RephraseWorker(
+                provider, text, self._config.mode,
+                context=self._config.default_context,
+            )
             self._worker.chunk.connect(self._on_chunk)
             self._worker.finished_ok.connect(self._on_stream_done)
             self._worker.failed.connect(self._on_failed)
@@ -204,8 +210,11 @@ class RephraserApp(QObject):
         self._manual_session = True
         self._popup.begin_compose(self._config.mode)
 
-    def _on_compose_submitted(self, text: str) -> None:
-        """Compose text submitted; the popup already shows its streaming state."""
+    def _on_compose_submitted(self, text: str, context: str) -> None:
+        """Compose text submitted; the popup already shows its streaming state.
+
+        A per-session *context* typed in the popup overrides the standing
+        default context from Settings."""
         try:
             provider = self._make_provider()
         except ProviderError as exc:
@@ -218,7 +227,10 @@ class RephraserApp(QObject):
             self._popup.dismiss()
             self._finish_session(restore=False)
             return
-        self._worker = RephraseWorker(provider, text, self._config.mode)
+        effective_context = context or self._config.default_context
+        self._worker = RephraseWorker(
+            provider, text, self._config.mode, context=effective_context
+        )
         self._worker.chunk.connect(self._on_chunk)
         self._worker.finished_ok.connect(self._on_stream_done)
         self._worker.failed.connect(self._on_failed)

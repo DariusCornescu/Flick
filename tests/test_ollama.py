@@ -110,6 +110,40 @@ def test_streams_chunks(monkeypatch):
     assert captured["payload"]["options"]["num_ctx"] >= 8192
 
 
+def test_context_is_fenced_into_user_message(monkeypatch):
+    lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
+    captured = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        captured["payload"] = json
+        return FakeResponse(lines)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = OllamaProvider("http://localhost:11434", "llama3.2")
+    list(provider.rephrase("hi", "formal", context="Reader is a child"))
+
+    user = captured["payload"]["messages"][-1]
+    assert user["role"] == "user"
+    assert "hi" in user["content"]
+    assert "Reader is a child" in user["content"]
+    assert "text to rewrite" in user["content"].lower()
+
+
+def test_no_context_leaves_user_message_plain(monkeypatch):
+    lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
+    captured = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        captured["payload"] = json
+        return FakeResponse(lines)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = OllamaProvider("http://localhost:11434", "llama3.2")
+    list(provider.rephrase("hi", "formal"))
+
+    assert captured["payload"]["messages"][-1] == {"role": "user", "content": "hi"}
+
+
 def test_connection_error_maps_to_provider_error(monkeypatch):
     def fake_post(*args, **kwargs):
         raise requests.ConnectionError("refused")

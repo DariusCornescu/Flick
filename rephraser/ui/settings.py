@@ -39,6 +39,11 @@ class SettingsDialog(QDialog):
         else:
             self._api_key.setPlaceholderText("sk-ant-...")
 
+        self._default_context = QLineEdit(cfg.default_context)
+        self._default_context.setPlaceholderText(
+            "Applied to every rephrase (optional) - e.g. what you're working on"
+        )
+
         self._hotkey = QLineEdit(cfg.hotkey)
         self._startup = QCheckBox("Start with Windows")
         try:
@@ -52,6 +57,7 @@ class SettingsDialog(QDialog):
         form.addRow("Ollama model:", self._ollama_model)
         form.addRow("Anthropic model:", self._anthropic_model)
         form.addRow("Anthropic API key:", self._api_key)
+        form.addRow("Default context:", self._default_context)
         form.addRow("Hotkey:", self._hotkey)
         form.addRow("", self._startup)
 
@@ -85,6 +91,8 @@ class SettingsDialog(QDialog):
             self._anthropic_model.text().strip() or self._cfg.anthropic_model
         )
         self._cfg.hotkey = combo
+        # Not the "or existing" idiom: an emptied field must clear the context.
+        self._cfg.default_context = self._default_context.text().strip()
         self._cfg.save()
 
         new_key = self._api_key.text().strip()

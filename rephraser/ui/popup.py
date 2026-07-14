@@ -6,6 +6,7 @@ from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
@@ -29,6 +30,14 @@ QPushButton#close {
     padding: 0;
 }
 QPushButton#close:hover { color: #e6e9ef; }
+QLineEdit#context {
+    background: #1b1e24;
+    color: #e6e9ef;
+    border: 1px solid #3d434d;
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-size: 12px;
+}
 QPlainTextEdit {
     background: #1b1e24;
     color: #e6e9ef;
@@ -43,7 +52,7 @@ QPlainTextEdit {
 class ResultPopup(QWidget):
     accepted = Signal(str)
     cancelled = Signal()
-    compose_submitted = Signal(str)
+    compose_submitted = Signal(str, str)
 
     def __init__(self) -> None:
         super().__init__(
@@ -68,6 +77,14 @@ class ResultPopup(QWidget):
         self._close_btn.setFixedSize(20, 20)
         self._close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # never steal editor focus
         self._close_btn.clicked.connect(self._cancel)
+        # Optional per-session context, shown only in compose mode. Hidden
+        # widgets take no layout space, so selection popups look unchanged.
+        self._context_input = QLineEdit()
+        self._context_input.setObjectName("context")
+        self._context_input.setPlaceholderText(
+            "Context (optional) - e.g. what you're working on"
+        )
+        self._context_input.setVisible(False)
         self._status = QLabel("")
         self._editor = QPlainTextEdit()
         self._editor.installEventFilter(self)
@@ -82,6 +99,7 @@ class ResultPopup(QWidget):
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(6)
         layout.addLayout(title_row)
+        layout.addWidget(self._context_input)
         layout.addWidget(self._editor)
         layout.addWidget(self._status)
 
@@ -97,6 +115,7 @@ class ResultPopup(QWidget):
         self._composing = False
         self._title.setText(f"Rephrase - {mode}")
         self._status.setText("Generating... (Esc to cancel)")
+        self._context_input.setVisible(False)
         self._editor.setPlainText("")
         self._editor.setReadOnly(True)
         self._move_near_cursor()
@@ -112,6 +131,8 @@ class ResultPopup(QWidget):
         self._composing = True
         self._title.setText(f"Rephrase - {mode} (compose)")
         self._status.setText("Ctrl+Enter: rephrase / Esc: close")
+        self._context_input.clear()
+        self._context_input.setVisible(True)
         self._editor.setPlainText("")
         self._editor.setReadOnly(False)
         self._move_near_cursor()
@@ -176,10 +197,12 @@ class ResultPopup(QWidget):
         text = self._editor.toPlainText().strip()
         if not text:
             return
+        context = self._context_input.text().strip()
+        self._context_input.setVisible(False)  # result replaces the compose UI
         self._editor.setPlainText("")  # the streamed result replaces the input
         self._editor.setReadOnly(True)
         self._status.setText("Generating... (Esc to cancel)")
-        self.compose_submitted.emit(text)
+        self.compose_submitted.emit(text, context)
 
     # -- dragging ------------------------------------------------------------
     def mousePressEvent(self, event) -> None:  # noqa: N802

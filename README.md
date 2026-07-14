@@ -17,8 +17,9 @@ the Anthropic API.
    configured LLM provider.
 4. A frameless popup near the cursor shows the result as it is generated.
    When the stream finishes you can edit it. `Enter` inserts,
-   `Shift+Enter` adds a newline, `Esc` cancels (clicking elsewhere cancels too).
-   Drag the popup by its title to move it out of the way.
+   `Shift+Enter` adds a newline, `Esc` (or the × button) cancels. Clicking
+   another window no longer dismisses the popup, so you can look something up
+   mid-rewrite. Drag the popup by its title to move it out of the way.
 5. On confirm the result is placed on the clipboard, `Ctrl+V` is simulated,
    and ~0.5 s later your original clipboard is restored.
 
@@ -79,11 +80,18 @@ Right-click the tray icon:
 
   Every mode is steered with a few built-in bilingual (English/Romanian)
   examples, so the rewrite keeps the input's language and stays output-only.
-- **Compose…** — open the window without selecting anything: type or paste
-  text, `Ctrl+Enter` rephrases it with the active mode, `Enter` copies the
-  result to the clipboard. Unlike hotkey sessions, the compose window stays
+- **Compose…** — open the window without selecting anything: optionally fill
+  the **Context** line, type or paste text, `Ctrl+Enter` rephrases it with the
+  active mode, `Enter` copies the result to the clipboard. The window stays
   open when you click elsewhere; close it with `Esc`.
-- **Settings…** — provider, models, API key, hotkey, run on startup.
+- **Settings…** — provider, models, API key, a standing **default context**,
+  hotkey, run on startup.
+
+  **Context** is optional reference material — what you're working on, who the
+  reader is — that steers the rewrite without ever being rewritten itself. Set
+  a standing default in Settings (applied to every rephrase, including hotkey
+  sessions), or type a one-off context in the Compose window, which overrides
+  the default for that session.
 - **Quit**
 
 Settings are stored as JSON in `%APPDATA%\Rephraser\config.json`.

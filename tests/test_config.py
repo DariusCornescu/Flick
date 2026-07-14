@@ -20,6 +20,7 @@ def test_defaults_when_no_file():
     assert cfg.enabled is True
     assert cfg.ollama_model == "gemma3:12b"
     assert cfg.anthropic_model == "claude-sonnet-5"
+    assert cfg.default_context == ""
 
 
 def test_round_trip(appdata):
@@ -28,6 +29,12 @@ def test_round_trip(appdata):
     assert (appdata / "Rephraser" / "config.json").exists()
     loaded = Config.load()
     assert loaded == cfg
+
+
+def test_default_context_round_trips(appdata):
+    cfg = Config(default_context="Reader is a 5-year-old")
+    cfg.save()
+    assert Config.load().default_context == "Reader is a 5-year-old"
 
 
 def test_corrupt_file_returns_defaults(appdata):

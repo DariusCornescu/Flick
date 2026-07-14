@@ -8,7 +8,13 @@ from collections.abc import Iterator
 
 import requests
 
-from .base import ProviderError, RephraseProvider, example_messages, system_prompt
+from .base import (
+    ProviderError,
+    RephraseProvider,
+    build_user_message,
+    example_messages,
+    system_prompt,
+)
 
 CONNECT_TIMEOUT_S = 5.0
 
@@ -45,15 +51,15 @@ class OllamaProvider(RephraseProvider):
         except Exception:  # noqa: BLE001 - best-effort abort
             pass
 
-    def rephrase(self, text: str, mode: str) -> Iterator[str]:
+    def rephrase(self, text: str, mode: str, context: str = "") -> Iterator[str]:
         try:
-            yield from self._stream_chat(text, mode)
+            yield from self._stream_chat(text, mode, context)
         except Exception:  # noqa: BLE001 - cross-thread close raises varied types
             if self._cancelled:
                 return  # aborted by cancel(); the outcome no longer matters
             raise
 
-    def _stream_chat(self, text: str, mode: str) -> Iterator[str]:
+    def _stream_chat(self, text: str, mode: str, context: str = "") -> Iterator[str]:
         payload = {
             "model": self._model,
             "stream": True,
@@ -65,7 +71,7 @@ class OllamaProvider(RephraseProvider):
             "messages": [
                 {"role": "system", "content": system_prompt(mode)},
                 *example_messages(mode),
-                {"role": "user", "content": text},
+                {"role": "user", "content": build_user_message(text, context)},
             ],
         }
         try:
