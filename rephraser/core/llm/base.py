@@ -139,21 +139,33 @@ def example_messages(mode: str) -> list[dict[str, str]]:
     return turns
 
 
-def build_user_message(text: str, context: str = "") -> str:
+_STRICT_CORRECTION = (
+    "\n\nYour previous attempt was rejected (it repeated the input, refused, or"
+    " added extra text). Output ONLY the rewritten text: it MUST differ from the"
+    " original, with no preamble, quotation marks, or code fences."
+)
+
+
+def build_user_message(text: str, context: str = "", strict: bool = False) -> str:
     """The user turn for a rephrase.
 
     With no context, this is just *text*. With context, *text* is preceded by
     a clearly fenced context block the model must treat as reference only - so
-    it steers the rewrite without being rewritten or answered itself."""
+    it steers the rewrite without being rewritten or answered itself. When
+    *strict*, a corrective note is appended for a retry after a failed attempt."""
     context = context.strip()
-    if not context:
-        return text
-    return (
-        "Context (reference only - do not rewrite or answer this):\n"
-        f"{context}\n\n"
-        "Text to rewrite:\n"
-        f"{text}"
-    )
+    if context:
+        body = (
+            "Context (reference only - do not rewrite or answer this):\n"
+            f"{context}\n\n"
+            "Text to rewrite:\n"
+            f"{text}"
+        )
+    else:
+        body = text
+    if strict:
+        body += _STRICT_CORRECTION
+    return body
 
 
 class ProviderError(RuntimeError):
@@ -166,11 +178,15 @@ class RephraseProvider(ABC):
     name: str = "base"
 
     @abstractmethod
-    def rephrase(self, text: str, mode: str, context: str = "") -> Iterator[str]:
+    def rephrase(
+        self, text: str, mode: str, context: str = "", strict: bool = False
+    ) -> Iterator[str]:
         """Yield chunks of the rewritten text. Raises ProviderError on failure.
 
         *context*, if given, is reference material fenced into the prompt to
-        steer the rewrite; it is never itself rewritten."""
+        steer the rewrite; it is never itself rewritten. *strict* re-prompts
+        more forcefully (and at a lower temperature) for a retry after a failed
+        first attempt."""
 
     def cancel(self) -> None:
         """Abort an in-flight :meth:`rephrase` promptly. Thread-safe.

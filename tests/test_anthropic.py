@@ -57,6 +57,8 @@ def test_streams_chunks():
     for i, m in enumerate(middle):
         assert m["role"] == ("user" if i % 2 == 0 else "assistant")
     assert "ONLY the rewritten text" in fake.kwargs["system"]
+    # Non-strict requests use a low, faithful temperature (not the API default).
+    assert fake.kwargs["temperature"] == 0.3
 
 
 def test_config_default_matches_provider_default():
@@ -85,6 +87,15 @@ def test_no_context_leaves_user_message_plain():
     list(provider.rephrase("gm", "formal"))
 
     assert fake.kwargs["messages"][-1] == {"role": "user", "content": "gm"}
+
+
+def test_strict_sets_low_temperature_and_adds_corrective():
+    fake = FakeClient(chunks=["ok"])
+    provider = _provider(fake)
+    list(provider.rephrase("gm", "formal", strict=True))
+
+    assert fake.kwargs.get("temperature", 1.0) <= 0.2
+    assert "previous attempt" in fake.kwargs["messages"][-1]["content"].lower()
 
 
 def test_auth_error_maps_to_provider_error():

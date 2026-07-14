@@ -53,8 +53,9 @@ fallback, and `llama3.2` is smaller still but English-only. Switch models in
 Settings.
 
 Rewrite quality scales with model size; the Anthropic provider is the
-highest-quality option. Local requests are sent with `temperature 0.3` and a
-generous context window for stable, faithful rewrites.
+highest-quality option. Requests are sent at a low `temperature` (0.3), with a
+generous local context window, for stable and faithful rewrites; a rewrite that
+echoes the input or refuses is retried once at an even lower temperature.
 
 ## Run
 

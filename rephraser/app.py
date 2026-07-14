@@ -14,6 +14,7 @@ from rephraser.core.hotkeys import HotkeyListener
 from rephraser.core.llm.anthropic import AnthropicProvider
 from rephraser.core.llm.base import ProviderError, RephraseProvider
 from rephraser.core.llm.ollama import OllamaProvider
+from rephraser.core.quality import clean_output, needs_retry
 from rephraser.ui.popup import ResultPopup
 from rephraser.ui.settings import SettingsDialog
 from rephraser.ui.tray import TrayIcon
@@ -27,6 +28,7 @@ class RephraseWorker(QThread):
     chunk = Signal(str)
     finished_ok = Signal(str)
     failed = Signal(str)
+    retrying = Signal()  # first attempt failed the quality guard; re-streaming
 
     def __init__(
         self, provider: RephraseProvider, text: str, mode: str, context: str = ""
@@ -46,28 +48,52 @@ class RephraseWorker(QThread):
             pass
 
     def run(self) -> None:  # worker thread - signals only, no UI
+        raw = self._attempt(strict=False)
+        if raw is None:
+            return  # interrupted, or a failure was already reported
+        if not self.isInterruptionRequested() and needs_retry(
+            self._text, raw, self._mode
+        ):
+            # First attempt echoed/refused/was empty: clear the popup and make
+            # one stricter, lower-temperature retry. Bounded to a single retry.
+            self.retrying.emit()
+            retry = self._attempt(strict=True)
+            if retry is None:
+                return
+            raw = retry
+        if self.isInterruptionRequested():
+            return  # cancelled: the session is torn down, report no outcome
+        final = clean_output(raw)
+        if final:
+            self.finished_ok.emit(final)
+        else:
+            self.failed.emit("The model returned an empty response.")
+
+    def _attempt(self, strict: bool) -> str | None:
+        """Stream one pass and return the raw joined text.
+
+        Returns None if the worker was interrupted mid-stream or a failure was
+        already emitted (the caller then stops without reporting an outcome)."""
         parts: list[str] = []
         try:
-            for piece in self._provider.rephrase(self._text, self._mode, self._context):
+            for piece in self._provider.rephrase(
+                self._text, self._mode, self._context, strict=strict
+            ):
                 if self.isInterruptionRequested():
-                    return
+                    return None
                 parts.append(piece)
                 self.chunk.emit(piece)
         except ProviderError as exc:
             if not self.isInterruptionRequested():
                 self.failed.emit(str(exc))
-            return
+            return None
         except Exception as exc:  # noqa: BLE001 - last resort: never crash the app
             if not self.isInterruptionRequested():
                 self.failed.emit(f"Unexpected error: {exc}")
-            return
+            return None
         if self.isInterruptionRequested():
-            return  # cancelled: the session is torn down, report no outcome
-        result = "".join(parts).strip()
-        if result:
-            self.finished_ok.emit(result)
-        else:
-            self.failed.emit("The model returned an empty response.")
+            return None
+        return "".join(parts)
 
 
 class RephraserApp(QObject):
@@ -193,6 +219,7 @@ class RephraserApp(QObject):
                 context=self._config.default_context,
             )
             self._worker.chunk.connect(self._on_chunk)
+            self._worker.retrying.connect(self._on_retrying)
             self._worker.finished_ok.connect(self._on_stream_done)
             self._worker.failed.connect(self._on_failed)
             self._worker.start()
@@ -232,6 +259,7 @@ class RephraserApp(QObject):
             provider, text, self._config.mode, context=effective_context
         )
         self._worker.chunk.connect(self._on_chunk)
+        self._worker.retrying.connect(self._on_retrying)
         self._worker.finished_ok.connect(self._on_stream_done)
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
@@ -256,6 +284,12 @@ class RephraserApp(QObject):
     def _on_chunk(self, piece: str) -> None:
         if self.sender() is self._worker:
             self._popup.append_chunk(piece)
+
+    def _on_retrying(self) -> None:
+        if self.sender() is self._worker:
+            # Discard the rejected first attempt and show a refining state; the
+            # stricter retry streams into the cleared popup.
+            self._popup.clear_for_retry()
 
     def _on_stream_done(self, _full_text: str) -> None:
         if self.sender() is self._worker:

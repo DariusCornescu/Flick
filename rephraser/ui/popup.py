@@ -147,6 +147,14 @@ class ResultPopup(QWidget):
         cursor.insertText(chunk)
         self._editor.setTextCursor(cursor)
 
+    def clear_for_retry(self) -> None:
+        """Discard a rejected first attempt: clear the editor and show a
+        refining hint while the stricter retry streams into it."""
+        self._done = False
+        self._editor.setReadOnly(True)
+        self._editor.setPlainText("")
+        self._status.setText("Refining... (Esc to cancel)")
+
     def finish_stream(self) -> None:
         self._done = True
         self._editor.setReadOnly(False)

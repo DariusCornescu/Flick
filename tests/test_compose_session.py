@@ -54,7 +54,7 @@ class RecordingBlockingProvider(RephraseProvider):
         self.streaming = threading.Event()
         self._released = threading.Event()
 
-    def rephrase(self, text, mode, context=""):
+    def rephrase(self, text, mode, context="", strict=False):
         self.calls.append((text, mode, context))
         yield "chunk "
         self.streaming.set()

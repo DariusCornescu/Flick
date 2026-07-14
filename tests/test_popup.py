@@ -156,6 +156,19 @@ def test_selection_result_hint_still_says_insert(popup):
     assert "insert" in popup._status.text().lower()
 
 
+def test_clear_for_retry_resets_to_streaming_state(popup):
+    popup.begin("formal")
+    popup.append_chunk("bad first attempt")
+    popup.finish_stream()  # done + editable
+
+    popup.clear_for_retry()
+
+    assert popup._editor.toPlainText() == ""
+    assert popup._editor.isReadOnly()
+    assert not popup._done  # Enter must not accept a mid-retry partial
+    assert "refining" in popup._status.text().lower()
+
+
 # -- click-away rules ----------------------------------------------------------
 
 def test_compose_survives_click_away(popup):

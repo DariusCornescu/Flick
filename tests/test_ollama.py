@@ -144,6 +144,22 @@ def test_no_context_leaves_user_message_plain(monkeypatch):
     assert captured["payload"]["messages"][-1] == {"role": "user", "content": "hi"}
 
 
+def test_strict_lowers_temperature_and_adds_corrective(monkeypatch):
+    lines = [json.dumps({"message": {"content": "ok"}, "done": True})]
+    captured = {}
+
+    def fake_post(url, json=None, stream=False, timeout=None):
+        captured["payload"] = json
+        return FakeResponse(lines)
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = OllamaProvider("http://localhost:11434", "llama3.2")
+    list(provider.rephrase("hi", "formal", strict=True))
+
+    assert captured["payload"]["options"]["temperature"] <= 0.1
+    assert "previous attempt" in captured["payload"]["messages"][-1]["content"].lower()
+
+
 def test_connection_error_maps_to_provider_error(monkeypatch):
     def fake_post(*args, **kwargs):
         raise requests.ConnectionError("refused")

@@ -19,7 +19,7 @@ class BlockingProvider(RephraseProvider):
         self.streaming = threading.Event()
         self._released = threading.Event()
 
-    def rephrase(self, text, mode, context=""):
+    def rephrase(self, text, mode, context="", strict=False):
         yield "first "
         self.streaming.set()
         if not self._released.wait(timeout=5.0):
@@ -63,7 +63,7 @@ def test_provider_cancel_is_optional_noop():
     class MinimalProvider(RephraseProvider):
         name = "minimal"
 
-        def rephrase(self, text, mode, context=""):
+        def rephrase(self, text, mode, context="", strict=False):
             yield "x"
 
     MinimalProvider().cancel()  # base-class hook exists and is a safe no-op
@@ -101,7 +101,7 @@ def test_cancelled_worker_suppresses_late_failure(start_worker):
             self.streaming = threading.Event()
             self.release = threading.Event()
 
-        def rephrase(self, text, mode, context=""):
+        def rephrase(self, text, mode, context="", strict=False):
             yield "first "
             self.streaming.set()
             if not self.release.wait(timeout=5.0):
