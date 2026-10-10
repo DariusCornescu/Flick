@@ -1,140 +1,53 @@
-# Rephraser
+# Flick
 
-A Windows tray application that rephrases the text you have selected in **any**
-application. Press a global hotkey (default `Ctrl+Alt+R`), watch the rewrite
-stream into a small popup near your cursor, tweak it if you like, press
-`Enter` — and it replaces your selection. Your clipboard is restored afterwards.
+**Rewrite text in any Windows app with one hotkey.** Select text anywhere, press `Ctrl+Alt+R`, watch the rewrite stream into a small popup next to your cursor, edit it if you like, and press `Enter` to replace your selection. Your clipboard is restored afterwards.
 
-Works fully offline with a local [Ollama](https://ollama.com) model, or with
-the Anthropic API.
+It runs fully offline with a local [Ollama](https://ollama.com) model, or with the Anthropic API. It handles Romanian and English natively.
+
+## What it does
+
+- **Works everywhere**: any app where you can select text and paste.
+- **Streams the result** into a frameless popup you can edit before accepting (`Enter` inserts, `Shift+Enter` adds a newline, `Esc` cancels).
+- **Several modes**: `formal`, `concise`, `grammar` (fix errors only), `casual`, `prompt` (turn a rough note into a clear instruction for an AI assistant), and **Translate** into English, Romanian, German, French, Spanish or Italian.
+- **Compose window**: open it without selecting anything, add an optional context line (who the reader is, what you're working on), and rephrase pasted or typed text.
+- **Private by default**: with Ollama, your text never leaves your machine. The Anthropic API key is stored in Windows Credential Manager, not in a config file.
+- **Opt-in training data**: it can save the rewrites you accept, locally, as JSONL for fine-tuning a model on your own style. It is off by default and never uploaded.
 
 ## How it works
 
-1. The hotkey fires → your current clipboard is backed up.
-2. The app simulates `Ctrl+C` and polls the clipboard (up to ~500 ms) for the
-   copied selection — no fixed sleeps.
-3. The text plus the active mode's system prompt is streamed through the
-   configured LLM provider.
-4. A frameless popup near the cursor shows the result as it is generated.
-   When the stream finishes you can edit it. `Enter` inserts,
-   `Shift+Enter` adds a newline, `Esc` (or the × button) cancels. Clicking
-   another window no longer dismisses the popup, so you can look something up
-   mid-rewrite. Drag the popup by its title to move it out of the way.
-5. On confirm the result is placed on the clipboard, `Ctrl+V` is simulated,
-   and ~0.5 s later your original clipboard is restored.
+1. The hotkey fires and your clipboard is backed up.
+2. The app simulates `Ctrl+C` and polls the clipboard for the selection, with no fixed sleeps.
+3. The text and the active mode's prompt stream through the configured provider.
+4. The popup shows the result as it is generated.
+5. On confirm, the result is pasted over your selection and your original clipboard is restored.
 
-## Requirements
+Rewrites run at low temperature for stable, faithful results, and an output that echoes the input or refuses is retried once at a lower temperature. Each mode is steered with built-in English and Romanian examples so the rewrite keeps the input's language.
 
-- Windows 10/11
-- Python 3.11+
-- For the default provider: a running [Ollama](https://ollama.com) instance
-- For the Anthropic provider: an Anthropic API key
+## Tech
 
-## Install
+Python 3.11, PySide6 (Qt) for the tray and popup, `pynput` for global hotkeys, `keyring` for credentials, Ollama and the Anthropic SDK as providers, and a headless pytest suite.
+
+| Provider | Default model | Notes |
+|---|---|---|
+| `ollama` | `gemma3:12b` | Local and offline. Multilingual, including Romanian. |
+| `anthropic` | `claude-sonnet-5` | Needs an API key. Highest quality. |
+
+## Run it
+
+Requires Windows 10/11 and Python 3.11+.
 
 ```powershell
 git clone https://github.com/DariusCornescu/Flick.git
 cd Flick
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
-```
-
-If you want the default local provider:
-
-```powershell
-ollama pull gemma3:12b
-```
-
-`gemma3:12b` (~8 GB) is the default: it is properly multilingual — it
-rephrases Romanian and English (and most other languages) in the language of
-the input — and noticeably better at nuanced rewrites than smaller models. If
-your machine is tight on memory, `gemma3:4b` is a lighter multilingual
-fallback, and `llama3.2` is smaller still but English-only. Switch models in
-Settings.
-
-Rewrite quality scales with model size; the Anthropic provider is the
-highest-quality option. Requests are sent at a low `temperature` (0.3), with a
-generous local context window, for stable and faithful rewrites; a rewrite that
-echoes the input or refuses is retried once at an even lower temperature.
-
-## Run
-
-```powershell
+ollama pull gemma3:12b          # for the local provider
 .venv\Scripts\python -m rephraser.app
 ```
 
-An "R" icon appears in the system tray. Select text anywhere and press
-`Ctrl+Alt+R`.
+A tray icon appears. Select text anywhere and press `Ctrl+Alt+R`. If your machine is tight on memory, `gemma3:4b` is a lighter multilingual model; switch models in Settings.
 
-## Configuration
-
-Right-click the tray icon:
-
-- **Enabled** — master on/off toggle for the hotkey.
-- **Mode** — switch between rephrasing modes:
-  - `formal` — professional tone
-  - `concise` — compress while preserving meaning
-  - `grammar` — fix grammar/spelling only, keep the style
-  - `casual` — relax the tone
-  - `prompt` — turn a rough note ("you forgot to do X") into a clear,
-    actionable prompt for an AI assistant
-  - `Translate →` — translate the selection into a chosen language
-    (English, Romanian, German, French, Spanish, Italian) instead of
-    rewriting it
-
-  Every rewriting mode is steered with a few built-in bilingual
-  (English/Romanian) examples, so the rewrite keeps the input's language and
-  stays output-only.
-- **Compose…** — open the window without selecting anything: optionally fill
-  the **Context** line, type or paste text, `Ctrl+Enter` rephrases it with the
-  active mode, `Enter` copies the result to the clipboard. The window stays
-  open when you click elsewhere; close it with `Esc`.
-- **Log rephrases** — opt-in toggle to save each accepted rephrase to a local
-  training-data file (off by default). Also available in Settings.
-- **Settings…** — provider, models, API key, a standing **default context**,
-  hotkey, run on startup, and training-data logging.
-
-  **Context** is optional reference material — what you're working on, who the
-  reader is — that steers the rewrite without ever being rewritten itself. Set
-  a standing default in Settings (applied to every rephrase, including hotkey
-  sessions), or type a one-off context in the Compose window, which overrides
-  the default for that session.
-- **Quit**
-
-Settings are stored as JSON in `%APPDATA%\Rephraser\config.json`.
-
-### Providers
-
-| Provider    | Default model      | Notes                                                      |
-|-------------|--------------------|------------------------------------------------------------|
-| `ollama`    | `gemma3:12b`       | Default. Local & offline; multilingual (Romanian/English). |
-| `anthropic` | `claude-sonnet-5`  | Needs an API key. Fully multilingual.                      |
-
-The Anthropic API key is stored in the **Windows Credential Manager** via
-`keyring` (service `rephraser`) — it is never written to the JSON config or
-any other plaintext file.
-
-### Training-data logging
-
-Off by default. When you enable **Log rephrases** (tray menu or Settings), each
-rephrase you *accept* is appended as one JSON object per line to
-`%APPDATA%\Rephraser\training_data.jsonl`. It is **local only** — nothing is
-ever uploaded — and the file is safe to delete at any time. Each record holds
-the mode, provider/model, any context, the original `input`, the model's raw
-`output`, and the `final` text you accepted (with an `edited` flag), which is
-exactly the shape needed to later fine-tune a local model on your own rewrites.
-Use **Open data folder** in Settings to find the file.
-
-### Hotkey format
-
-The hotkey uses pynput syntax, e.g. `<ctrl>+<alt>+r`, `<ctrl>+<shift>+<f9>`.
-It is validated when you save.
-
-### Run on Windows startup
-
-The "Start with Windows" checkbox in Settings writes/removes a value under
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` pointing at
-`pythonw.exe -m rephraser.app`.
+Settings (provider, models, default context, hotkey, start with Windows) are in the tray menu. They are stored in `%APPDATA%\Rephraser\config.json`.
 
 ## Development
 
@@ -143,36 +56,15 @@ The "Start with Windows" checkbox in Settings writes/removes a value under
 .venv\Scripts\python -m pytest -v
 ```
 
-Tests run headless (`QT_QPA_PLATFORM=offscreen`); clipboard tests use Qt's
-in-process offscreen clipboard and key simulation is stubbed out.
+Tests run headless with `QT_QPA_PLATFORM=offscreen`. Hotkey and paste round trips need a real desktop session, so they are covered by a manual checklist.
 
-### Manual test checklist
+## Known limitations
 
-Hotkey/paste round-trips need a real desktop session, so verify by hand:
+- Only text clipboard content is backed up. An image on the clipboard is lost after a rephrase.
+- Admin windows don't accept simulated input from a non-elevated process (Windows UIPI).
+- Apps with a non-standard copy shortcut (some terminals use `Ctrl+Shift+C`) won't respond to the simulated `Ctrl+C`.
+- The hotkey isn't swallowed, so it still reaches the focused app. Windows treats `Ctrl+Alt` as `AltGr`, which on some layouts types a character over your selection. If yours does, pick another hotkey in Settings, such as `<ctrl>+<shift>+<f9>`.
 
-1. Select text in Notepad → hotkey → result streams → `Enter` → text replaced,
-   previous clipboard content restored.
-2. Hotkey with the popup already open → second press is ignored.
-3. `Esc` (or clicking another window) during streaming → nothing pasted,
-   clipboard restored.
-4. Hotkey with no selection → tray notification "No text selected".
-5. Stop Ollama → hotkey → tray notification, no crash.
-6. Switch provider to `anthropic` without a key → tray notification pointing
-   to Settings.
+## License
 
-## Limitations
-
-- Only **text** clipboard content is backed up and restored. If you had an
-  image on the clipboard, it is lost after a rephrase.
-- Elevated (admin) windows don't accept simulated input from a non-elevated
-  process (Windows UIPI) — run Rephraser elevated if you need it there.
-- Apps with non-standard copy shortcuts (some terminals use
-  `Ctrl+Shift+C`) won't respond to the simulated `Ctrl+C`.
-- The hotkey chord is observed, **not swallowed** (pynput cannot suppress a
-  single combination), so it still reaches the focused app. Windows treats
-  `Ctrl+Alt` as `AltGr`: on layouts where `AltGr+R` produces a character
-  (e.g. `®` on US-International), the default hotkey types that character
-  over your selection. If your layout does this, pick a different hotkey in
-  Settings (e.g. `<ctrl>+<shift>+<f9>`).
-- The "Start with Windows" entry embeds the path of this checkout. If you
-  move the folder, re-toggle the checkbox in Settings.
+See [LICENSE](LICENSE).
